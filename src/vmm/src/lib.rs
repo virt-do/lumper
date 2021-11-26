@@ -41,8 +41,6 @@ pub enum Error {
     Vcpu(cpu::Error),
     /// Memory error.
     Memory(vm_memory::Error),
-    /// VMM creation error
-    VMMNew,
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -58,7 +56,21 @@ pub struct VMM {
 impl VMM {
     /// Create a new VMM.
     pub fn new() -> Result<Self> {
-        Err(Error::VMMNew)
+        // Open /dev/kvm and get a file descriptor to it.
+        let kvm = Kvm::new().map_err(Error::KvmIoctl)?;
+
+        // Create a KVM VM object.
+        // KVM returns a file descriptor to the VM object.
+        let vm_fd = kvm.create_vm().map_err(Error::KvmIoctl)?;
+
+        let vmm = VMM {
+            vm_fd,
+            kvm,
+            guest_memory: GuestMemoryMmap::default(),
+            vcpus: vec![],
+        };
+
+        Ok(vmm)
     }
 
     pub fn configure_memory(&mut self, mem_size_mb: u32) -> Result<()> {
