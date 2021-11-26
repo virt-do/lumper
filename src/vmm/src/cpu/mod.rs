@@ -206,5 +206,43 @@ impl Vcpu {
     }
 
     /// vCPU emulation loop.
-    pub fn run(&mut self) {}
+    pub fn run(&mut self) {
+        // Call into KVM to launch (VMLAUNCH) or resume (VMRESUME) the virtual CPU.
+        // This is a blocking function, it only returns for either an error or a
+        // VM-Exit. In the latter case, we can inspect the exit reason.
+        match self.vcpu_fd.run() {
+            Ok(exit_reason) => match exit_reason {
+                // The VM stopped (Shutdown ot HLT).
+                VcpuExit::Shutdown | VcpuExit::Hlt => {
+                    println!("Guest shutdown: {:?}. Bye!", exit_reason);
+                    unsafe { libc::exit(0) };
+                }
+
+                // This is a PIO write, i.e. the gust is trying to write
+                // something to an I/O port.
+                VcpuExit::IoOut(addr, data) => {
+                    println!(
+                        "vCPU{} VM-Exit [I/O out@{:x?} {:?}]",
+                        self.index, addr, data
+                    );
+                }
+
+                // This is a PIO write, i.e. the guest is trying to read
+                // from an I/O port.
+                VcpuExit::IoIn(addr, data) => {
+                    println!(
+                        "vCPU{} VM-Exit [I/O in@0x{:x?} {} bytes {}]",
+                        self.index,
+                        addr,
+                        data.len(),
+                        data[0]
+                    );
+                }
+                _ => {
+                    eprintln!("Unhandled VM-Exit: {:?}", exit_reason);
+                }
+            },
+            Err(e) => eprintln!("Emulation error: {}", e),
+        }
+    }
 }
