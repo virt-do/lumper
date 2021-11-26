@@ -162,7 +162,17 @@ impl VMM {
         Ok(())
     }
 
-    pub fn run(&mut self) {}
+    // Run all virtual CPUs.
+    pub fn run(&mut self) {
+        for mut vcpu in self.vcpus.drain(..) {
+            println!("Starting vCPU {:?}", vcpu.index);
+            let _ = thread::Builder::new().spawn(move || loop {
+                vcpu.run();
+            });
+        }
+
+        loop {}
+    }
 
     pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str) -> Result<()> {
         self.configure_memory(mem_size_mb)?;
