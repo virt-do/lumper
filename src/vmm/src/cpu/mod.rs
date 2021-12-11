@@ -1,11 +1,15 @@
 // Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
+use std::convert::TryInto;
+use std::sync::{Arc, Mutex};
 use std::{result, u64};
 
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId};
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryError, GuestMemoryMmap};
+
+use crate::devices::serial::{LumperSerial, SERIAL_PORT_BASE};
 
 pub(crate) mod cpuid;
 mod gdt;
@@ -58,14 +62,17 @@ pub(crate) struct Vcpu {
     pub index: u64,
     /// KVM file descriptor for a vCPU.
     pub vcpu_fd: VcpuFd,
+
+    serial: Arc<Mutex<LumperSerial>>,
 }
 
 impl Vcpu {
     /// Create a new vCPU.
-    pub fn new(vm_fd: &VmFd, index: u64) -> Result<Self> {
+    pub fn new(vm_fd: &VmFd, index: u64, serial: Arc<Mutex<LumperSerial>>) -> Result<Self> {
         Ok(Vcpu {
             index,
             vcpu_fd: vm_fd.create_vcpu(index).map_err(Error::KvmIoctl)?,
+            serial,
         })
     }
 
@@ -218,24 +225,29 @@ impl Vcpu {
                     unsafe { libc::exit(0) };
                 }
 
-                // This is a PIO write, i.e. the gust is trying to write
+                // This is a PIO write, i.e. the guest is trying to write
                 // something to an I/O port.
                 VcpuExit::IoOut(addr, data) => {
-                    println!(
-                        "vCPU{} VM-Exit [I/O out@{:x?} {:?}]",
-                        self.index, addr, data
-                    );
+                    self.serial
+                        .lock()
+                        .unwrap()
+                        .serial
+                        .write(
+                            (addr - SERIAL_PORT_BASE)
+                                .try_into()
+                                .expect("Invalid serial register offset"),
+                            data[0],
+                        )
+                        .unwrap();
                 }
 
-                // This is a PIO write, i.e. the guest is trying to read
+                // This is a PIO read, i.e. the guest is trying to read
                 // from an I/O port.
                 VcpuExit::IoIn(addr, data) => {
-                    println!(
-                        "vCPU{} VM-Exit [I/O in@0x{:x?} {} bytes {}]",
-                        self.index,
-                        addr,
-                        data.len(),
-                        data[0]
+                    data[0] = self.serial.lock().unwrap().serial.read(
+                        (addr - SERIAL_PORT_BASE)
+                            .try_into()
+                            .expect("Invalid serial register offset"),
                     );
                 }
                 _ => {
