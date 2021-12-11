@@ -96,7 +96,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a78c049190826fff959994b7c1d8a2930d0a348f1b8f3aa4f9bb34cd5d7f2952"
 dependencies = [
- "vmm-sys-util 0.9.0",
+ "vmm-sys-util",
 ]
 
 [[package]]
@@ -107,7 +107,7 @@ checksum = "97422ba48d7ffb66fd4d18130f72ab66f9bbbf791fb7a87b9291cdcfec437593"
 dependencies = [
  "kvm-bindings",
  "libc",
- "vmm-sys-util 0.9.0",
+ "vmm-sys-util",
 ]
 
 [[package]]
@@ -280,6 +280,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "vm-superio"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be26a7083513b8302a0053a93f03592ec8875803ff312e0bd3a373e1bee4cfd"
+
+[[package]]
 name = "vmm"
 version = "0.1.0"
 dependencies = [
@@ -289,17 +295,8 @@ dependencies = [
  "linux-loader",
  "vm-device",
  "vm-memory",
- "vmm-sys-util 0.8.0",
-]
-
-[[package]]
-name = "vmm-sys-util"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01cf11afbc4ebc0d5c7a7748a77d19e2042677fc15faa2f4ccccb27c18a60605"
-dependencies = [
- "bitflags",
- "libc",
+ "vm-superio",
+ "vmm-sys-util",
 ]
 
 [[package]]

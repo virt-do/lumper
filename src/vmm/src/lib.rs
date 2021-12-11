@@ -6,7 +6,9 @@ extern crate libc;
 
 extern crate linux_loader;
 extern crate vm_memory;
+extern crate vm_superio;
 
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
 
@@ -17,6 +19,8 @@ use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemory
 
 mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
+mod devices;
+use devices::serial::LumperSerial;
 mod kernel;
 
 #[derive(Debug)]
@@ -41,6 +45,10 @@ pub enum Error {
     Vcpu(cpu::Error),
     /// Memory error.
     Memory(vm_memory::Error),
+    /// Serial creation error
+    SerialCreation(io::Error),
+    /// IRQ registration error
+    IrqRegister(io::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -51,6 +59,8 @@ pub struct VMM {
     kvm: Kvm,
     guest_memory: GuestMemoryMmap,
     vcpus: Vec<Vcpu>,
+
+    serial: Arc<Mutex<LumperSerial>>,
 }
 
 impl VMM {
@@ -68,6 +78,9 @@ impl VMM {
             kvm,
             guest_memory: GuestMemoryMmap::default(),
             vcpus: vec![],
+            serial: Arc::new(Mutex::new(
+                LumperSerial::new().map_err(Error::SerialCreation)?,
+            )),
         };
 
         Ok(vmm)
@@ -113,6 +126,18 @@ impl VMM {
         // When in doubt, look in the kernel for `KVM_CREATE_IRQCHIP`.
         // https://elixir.bootlin.com/linux/latest/source/arch/x86/kvm/x86.c
         self.vm_fd.create_irq_chip().map_err(Error::KvmIoctl)?;
+
+        self.vm_fd
+            .register_irqfd(
+                &self
+                    .serial
+                    .lock()
+                    .unwrap()
+                    .eventfd()
+                    .map_err(Error::IrqRegister)?,
+                4,
+            )
+            .map_err(Error::KvmIoctl)?;
 
         Ok(())
     }
