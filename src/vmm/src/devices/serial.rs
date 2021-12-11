@@ -8,6 +8,7 @@ use vm_superio::{Serial, Trigger};
 use vmm_sys_util::eventfd::EventFd;
 
 pub const SERIAL_PORT_BASE: u16 = 0x3f8;
+pub const SERIAL_PORT_LAST_REGISTER: u16 = SERIAL_PORT_BASE + 0x8;
 
 pub struct EventFdTrigger(EventFd);
 
