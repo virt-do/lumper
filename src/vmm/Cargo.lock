@@ -9,6 +9,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "epoll"
+version = "4.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20df693c700404f7e19d4d6fae6b15215d2913c27955d2b9d6f2c0f537511cd0"
+dependencies = [
+ "bitflags",
+ "libc",
+]
+
+[[package]]
 name = "kvm-bindings"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -68,6 +78,7 @@ checksum = "3be26a7083513b8302a0053a93f03592ec8875803ff312e0bd3a373e1bee4cfd"
 name = "vmm"
 version = "0.1.0"
 dependencies = [
+ "epoll",
  "kvm-bindings",
  "kvm-ioctls",
  "libc",
