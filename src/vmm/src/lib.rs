@@ -236,7 +236,12 @@ impl VMM {
 
                     let count = stdin_lock.read_raw(&mut out).map_err(Error::StdinRead)?;
 
-                    println!("Read {:?} from STDIN", out[0]);
+                    self.serial
+                        .lock()
+                        .unwrap()
+                        .serial
+                        .enqueue_raw_bytes(&out[..count])
+                        .map_err(Error::StdinWrite)?;
                 }
             }
         }
