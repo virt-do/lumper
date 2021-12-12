@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
 use std::convert::TryInto;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::{result, u64};
 
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId};
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryError, GuestMemoryMmap};
+use vmm_sys_util::terminal::Terminal;
 
 use crate::devices::serial::{LumperSerial, SERIAL_PORT_BASE, SERIAL_PORT_LAST_REGISTER};
 
@@ -222,6 +224,10 @@ impl Vcpu {
                 // The VM stopped (Shutdown ot HLT).
                 VcpuExit::Shutdown | VcpuExit::Hlt => {
                     println!("Guest shutdown: {:?}. Bye!", exit_reason);
+                    let stdin = io::stdin();
+                    let stdin_lock = stdin.lock();
+                    stdin_lock.set_canon_mode().unwrap();
+
                     unsafe { libc::exit(0) };
                 }
 
