@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::{stdout, Error, Result, Stdout};
+use std::io::{Error, Result, Write};
 use std::ops::Deref;
 
 use vm_superio::serial::NoEvents;
@@ -41,16 +41,16 @@ pub(crate) struct LumperSerial {
     eventfd: EventFdTrigger,
 
     // serial is the actual serial device.
-    pub serial: Serial<EventFdTrigger, NoEvents, Stdout>,
+    pub serial: Serial<EventFdTrigger, NoEvents, Box<dyn Write + Send>>,
 }
 
 impl LumperSerial {
-    pub fn new() -> Result<Self> {
+    pub fn new(output: Box<dyn Write + Send>) -> Result<Self> {
         let eventfd = EventFdTrigger::new(libc::EFD_NONBLOCK).unwrap();
 
         Ok(LumperSerial {
             eventfd: eventfd.try_clone()?,
-            serial: Serial::new(eventfd.try_clone()?, stdout()),
+            serial: Serial::new(eventfd.try_clone()?, Box::new(output)),
         })
     }
 

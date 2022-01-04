@@ -8,22 +8,24 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::io::stdout;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
+use std::fs::File;
 
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::{self, KernelLoaderResult};
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::terminal::Terminal;
-
 mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
 mod devices;
 use devices::serial::LumperSerial;
+
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 mod kernel;
@@ -62,6 +64,8 @@ pub enum Error {
     StdinWrite(vm_superio::serial::Error<io::Error>),
     /// Terminal configuration error
     TerminalConfigure(kvm_ioctls::Error),
+    /// Console configuration error
+    ConsoleError(io::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -96,7 +100,7 @@ impl VMM {
             guest_memory: GuestMemoryMmap::default(),
             vcpus: vec![],
             serial: Arc::new(Mutex::new(
-                LumperSerial::new().map_err(Error::SerialCreation)?,
+                LumperSerial::new(Box::new(stdout())).map_err(Error::SerialCreation)?,
             )),
             epoll,
         };
@@ -156,6 +160,21 @@ impl VMM {
                 4,
             )
             .map_err(Error::KvmIoctl)?;
+
+        Ok(())
+    }
+
+    pub fn configure_console(
+        &mut self,
+        console_path: Option<String>
+    ) -> Result<()> {
+        if let Some(console_path) = console_path {
+            // We create the file if it does not exist, else we open
+            let file = File::create(&console_path).map_err(Error::ConsoleError)?;
+
+            let mut serial = self.serial.lock().unwrap();
+            *serial = LumperSerial::new(Box::new(file)).map_err(Error::SerialCreation)?;
+        }
 
         Ok(())
     }
@@ -247,7 +266,8 @@ impl VMM {
         }
     }
 
-    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str) -> Result<()> {
+    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
+        self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
         let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
         self.configure_io()?;

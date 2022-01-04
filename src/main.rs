@@ -21,6 +21,10 @@ struct VMMOpts {
     /// A level of verbosity, and can be used multiple times
     #[clap(short, long, parse(from_occurrences))]
     verbose: i32,
+
+    /// Stdout console file path
+    #[clap(long)]
+    console: Option<String>
 }
 
 #[derive(Debug)]
@@ -42,7 +46,8 @@ fn main() -> Result<(), Error> {
     // * Number of virtual CPUs
     // * Memory size (in MB)
     // * Path to a Linux kernel
-    vmm.configure(opts.cpus, opts.memory, &opts.kernel)
+    // * Optional path to console file
+    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console)
         .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
