@@ -13,7 +13,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::{io, path::PathBuf};
+use std::io;
 use std::fs::File;
 
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
@@ -30,6 +30,9 @@ mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 
 mod kernel;
+
+pub mod config;
+use crate::config::VMMConfig;
 
 #[derive(Debug, thiserror::Error)]
 /// VMM errors.
@@ -281,12 +284,12 @@ impl VMM {
         }
     }
 
-    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
-        self.configure_console(console)?;
-        self.configure_memory(mem_size_mb)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
+    pub fn configure(&mut self, cfg: VMMConfig) -> Result<()> {
+        self.configure_console(cfg.console)?;
+        self.configure_memory(cfg.memory)?;
+        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel)?;
         self.configure_io()?;
-        self.configure_vcpus(num_vcpus, kernel_load)?;
+        self.configure_vcpus(cfg.cpus, kernel_load)?;
 
         Ok(())
     }

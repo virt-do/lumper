@@ -1,6 +1,7 @@
 use std::u32;
 
 use clap::Parser;
+use vmm::config::VMMConfig;
 use vmm::VMM;
 
 #[derive(Parser)]
@@ -36,8 +37,18 @@ pub enum Error {
     VmmRun(vmm::Error),
 }
 
+impl From<VMMOpts> for VMMConfig {
+    fn from(opts: VMMOpts) -> Self {
+        VMMConfig::builder()
+            .console(opts.console)
+            .verbose(opts.verbose)
+            .build()
+    }
+}
+
 fn main() -> Result<(), Error> {
     let opts: VMMOpts = VMMOpts::parse();
+    let cfg: VMMConfig = VMMConfig::from(opts);
 
     // Create a new VMM
     let mut vmm = VMM::new().map_err(Error::VmmNew)?;
@@ -47,8 +58,7 @@ fn main() -> Result<(), Error> {
     // * Memory size (in MB)
     // * Path to a Linux kernel
     // * Optional path to console file
-    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console)
-        .map_err(Error::VmmConfigure)?;
+    vmm.configure(cfg).map_err(Error::VmmConfigure)?;
 
     // Run the VMM
     vmm.run().map_err(Error::VmmRun)?;
