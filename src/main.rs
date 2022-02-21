@@ -25,7 +25,11 @@ struct VMMOpts {
 
     /// Stdout console file path
     #[clap(long)]
-    console: Option<String>
+    console: Option<String>,
+
+    /// Define a TAP interface name used to give network to the guest
+    #[clap(short, long)]
+    tap: Option<String>,
 }
 
 #[derive(Debug)]
@@ -40,6 +44,7 @@ pub enum Error {
 impl From<VMMOpts> for VMMConfig {
     fn from(opts: VMMOpts) -> Self {
         VMMConfig::builder()
+            .tap(opts.tap)
             .console(opts.console)
             .verbose(opts.verbose)
             .build()

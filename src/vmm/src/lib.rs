@@ -84,10 +84,16 @@ pub enum Error {
 
     #[error("Console configuration error")]
     ConsoleError(io::Error),
+
+    #[error("TAP interface could not be found or not specified")]
+    TapError,
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
 pub type Result<T> = std::result::Result<T, Error>;
+pub struct NetConfig {
+    tap_name: String,
+}
 
 pub struct VMM {
     vm_fd: VmFd,
