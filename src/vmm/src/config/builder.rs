@@ -18,6 +18,7 @@ pub struct VMMConfigBuilder {
     memory: u32,
     verbose: i32,
     console: Option<String>,
+    tap: Option<config::NetConfig>,
 }
 
 impl VMMConfigBuilder {
@@ -29,6 +30,7 @@ impl VMMConfigBuilder {
             memory: self.memory,
             verbose: self.verbose,
             console: self.console,
+            tap: self.tap,
         }
     }
 }
@@ -54,4 +56,11 @@ impl VMMConfigBuilder {
         self
     }
 
+    pub fn tap(mut self, tap_name: Option<String>) -> Self {
+        self.tap = match tap_name.try_into() {
+            Ok(cfg) => Some(cfg),
+            _ => None,
+        };
+        self
+    }
 }
