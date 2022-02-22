@@ -28,43 +28,58 @@ use devices::serial::LumperSerial;
 
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
+
 mod kernel;
 
-#[derive(Debug)]
-
+#[derive(Debug, thiserror::Error)]
 /// VMM errors.
 pub enum Error {
-    /// Failed to write boot parameters to guest memory.
+    #[error("Failed to write boot parameters to guest memory: {0}")]
     BootConfigure(linux_loader::configurator::Error),
-    /// Error configuring the kernel command line.
+
+    #[error("Error configuring the kernel command line: {0}")]
     Cmdline(linux_loader::cmdline::Error),
-    /// Failed to load kernel.
+
+    #[error("Failed to load kernel: {0}")]
     KernelLoad(loader::Error),
-    /// Invalid E820 configuration.
+
+    #[error("Invalid E820 configuration")]
     E820Configuration,
-    /// Highmem start address is past the guest memory end.
+
+    #[error("Highmem start address is past the guest memory end")]
     HimemStartPastMemEnd,
-    /// I/O error.
+
+    #[error("IO Error: {0}")]
     IO(io::Error),
-    /// Error issuing an ioctl to KVM.
+
+    #[error("Error issuing an ioctl to KVM")]
     KvmIoctl(kvm_ioctls::Error),
-    /// vCPU errors.
+
+    #[error("vCPU errors")]
     Vcpu(cpu::Error),
-    /// Memory error.
+
+    #[error("Memory error")]
     Memory(vm_memory::Error),
-    /// Serial creation error
+
+    #[error("Serial creation error")]
     SerialCreation(io::Error),
-    /// IRQ registration error
+
+    #[error("IRQ registration error")]
     IrqRegister(io::Error),
-    /// epoll creation error
+
+    #[error("epoll creation error")]
     EpollError(io::Error),
-    /// STDIN read error
+
+    #[error("STDIN read error")]
     StdinRead(kvm_ioctls::Error),
-    /// STDIN write error
+
+    #[error("STDIN write error")]
     StdinWrite(vm_superio::serial::Error<io::Error>),
-    /// Terminal configuration error
+
+    #[error("Terminal configuration error")]
     TerminalConfigure(kvm_ioctls::Error),
-    /// Console configuration error
+
+    #[error("Console configuration error")]
     ConsoleError(io::Error),
 }
 
