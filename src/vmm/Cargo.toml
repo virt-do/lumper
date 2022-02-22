@@ -8,6 +8,9 @@ epoll = "4.3.1"
 kvm-bindings = { version = "0.5.0", features = ["fam-wrappers"] }
 kvm-ioctls = "0.11.0"
 libc = "0.2.91"
+# TODO: Maybe move devices module into a crate
+# Used by devices
+thiserror = "1.0.30"
 linux-loader = { version = "0.4.0", features = ["bzimage", "elf"] }
 vm-memory = { version = "0.7.0", features = ["backend-mmap"] }
 vmm-sys-util = "0.9.0"
