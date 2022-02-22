@@ -8,13 +8,13 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::fs::File;
+use std::io;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::io;
-use std::fs::File;
 
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
@@ -188,10 +188,7 @@ impl VMM {
         Ok(())
     }
 
-    pub fn configure_console(
-        &mut self,
-        console_path: Option<String>
-    ) -> Result<()> {
+    pub fn configure_console(&mut self, console_path: Option<String>) -> Result<()> {
         if let Some(console_path) = console_path {
             // We create the file if it does not exist, else we open
             let file = File::create(&console_path).map_err(Error::ConsoleError)?;
