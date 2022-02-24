@@ -28,6 +28,7 @@ use devices::serial::LumperSerial;
 
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
+use vm_device::device_manager::IoManager;
 
 mod kernel;
 
@@ -104,6 +105,9 @@ pub struct VMM {
     guest_memory: GuestMemoryMmap,
     vcpus: Vec<Vcpu>,
 
+    // Property used by various threads (vcpus) by DeviceMMio & DevicePio impl.
+    io_mgr: Arc<Mutex<IoManager>>,
+
     serial: Arc<Mutex<LumperSerial>>,
     epoll: EpollContext,
 }
@@ -121,6 +125,8 @@ impl VMM {
         let epoll = EpollContext::new().map_err(Error::EpollError)?;
         epoll.add_stdin().map_err(Error::EpollError)?;
 
+        let io_mgr = Arc::new(Mutex::new(IoManager::new()));
+
         let vmm = VMM {
             vm_fd,
             kvm,
@@ -129,6 +135,7 @@ impl VMM {
             serial: Arc::new(Mutex::new(
                 LumperSerial::new(Box::new(stdout())).map_err(Error::SerialCreation)?,
             )),
+            io_mgr,
             epoll,
         };
 
