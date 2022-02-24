@@ -5,7 +5,7 @@ mod builder;
 
 #[derive(Debug, PartialEq)]
 pub struct NetConfig {
-    tap_name: String,
+    pub tap_name: String,
 }
 
 /// VMM configuration.
