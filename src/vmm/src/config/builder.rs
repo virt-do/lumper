@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 impl VMMConfig {
     /// Create the builder to generate a vmm config
-    pub fn builder() -> VMMConfigBuilder {
-        VMMConfigBuilder::default()
+    pub fn builder(num_vcpus: u8, mem_size_mb: u32, kernel_path: &str) -> VMMConfigBuilder {
+        VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)
     }
 }
 
