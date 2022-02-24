@@ -43,7 +43,7 @@ pub enum Error {
 
 impl From<VMMOpts> for VMMConfig {
     fn from(opts: VMMOpts) -> Self {
-        VMMConfig::builder()
+        VMMConfig::builder(opts.cpus, opts.memory, &opts.kernel)
             .tap(opts.tap)
             .console(opts.console)
             .verbose(opts.verbose)
@@ -69,4 +69,41 @@ fn main() -> Result<(), Error> {
     vmm.run().map_err(Error::VmmRun)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::VMMOpts;
+    use std::path::PathBuf;
+    use vmm::config::{NetConfig, VMMConfig};
+
+    // Test whether the configuration is properly parsed from clap options
+    // to VMMConfig format
+    #[test]
+    fn test_parse_config_success() {
+        let tap = Some(String::from("tap0"));
+        let console = Some(String::from("console.log"));
+        let kernel = String::from("kernel_file");
+
+        let opts: VMMOpts = VMMOpts {
+            kernel: kernel.clone(),
+            cpus: 1,
+            memory: 256,
+            verbose: 0,
+            console: console.clone(),
+            tap: tap.clone(),
+        };
+        let cfg = VMMConfig::from(opts);
+
+        let net_config = Some(NetConfig::try_from(tap.clone()).unwrap());
+
+        // We hard code values as we don't want to implement Copy & Clone to
+        // VMMOpts struct just for this test
+        assert_eq!(PathBuf::from(kernel), cfg.kernel);
+        assert_eq!(1, cfg.cpus);
+        assert_eq!(256, cfg.memory);
+        assert_eq!(0, cfg.verbose);
+        assert_eq!(console, cfg.console);
+        assert_eq!(tap.unwrap(), net_config.unwrap().tap_name);
+    }
 }
