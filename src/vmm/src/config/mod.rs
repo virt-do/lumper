@@ -9,7 +9,7 @@ const KERNEL_CMDLINE_CAPACITY: usize = 4096;
 const KERNEL_CMDLINE_DEFAULT: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
 
 // Max size for an interface name
-const IFACE_NAME_MAX_LEN: usize = 16;
+pub const IFACE_NAME_MAX_LEN: usize = 16;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

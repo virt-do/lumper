@@ -87,10 +87,7 @@ pub enum Error {
     ConsoleError(io::Error),
 
     #[error("TAP interface could not be found or not specified")]
-    TapError,
-
-    #[error("Parse config failed")]
-    ConfigError(config::Error),
+    Tap(devices::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
