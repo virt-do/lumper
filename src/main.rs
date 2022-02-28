@@ -41,19 +41,24 @@ pub enum Error {
     VmmRun(vmm::Error),
 }
 
-impl From<VMMOpts> for VMMConfig {
-    fn from(opts: VMMOpts) -> Self {
-        VMMConfig::builder(opts.cpus, opts.memory, &opts.kernel)
+impl TryFrom<VMMOpts> for VMMConfig {
+    type Error = Error;
+
+    fn try_from(opts: VMMOpts) -> Result<Self, Error> {
+        let builder =
+            VMMConfig::builder(opts.cpus, opts.memory, opts.kernel).map_err(Error::VmmConfigure)?;
+
+        Ok(builder
             .tap(opts.tap)
             .console(opts.console)
             .verbose(opts.verbose)
-            .build()
+            .build())
     }
 }
 
 fn main() -> Result<(), Error> {
     let opts: VMMOpts = VMMOpts::parse();
-    let cfg: VMMConfig = VMMConfig::from(opts);
+    let cfg: VMMConfig = VMMConfig::try_from(opts)?;
 
     // Create a new VMM
     let mut vmm = VMM::new().map_err(Error::VmmNew)?;
@@ -74,16 +79,15 @@ fn main() -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use crate::VMMOpts;
-    use std::path::PathBuf;
-    use vmm::config::{NetConfig, VMMConfig};
+    use vmm::config::{KernelConfig, NetConfig, VMMConfig};
 
     // Test whether the configuration is properly parsed from clap options
     // to VMMConfig format
     #[test]
-    fn test_parse_config_success() {
+    fn test_parse_config_success() -> Result<(), crate::Error> {
         let tap = Some(String::from("tap0"));
         let console = Some(String::from("console.log"));
-        let kernel = String::from("kernel_file");
+        let kernel = String::from("./Cargo.toml");
 
         let opts: VMMOpts = VMMOpts {
             kernel: kernel.clone(),
@@ -93,17 +97,39 @@ mod tests {
             console: console.clone(),
             tap: tap.clone(),
         };
-        let cfg = VMMConfig::from(opts);
+        let cfg = VMMConfig::try_from(opts)?;
 
         let net_config = Some(NetConfig::try_from(tap.clone()).unwrap());
 
         // We hard code values as we don't want to implement Copy & Clone to
         // VMMOpts struct just for this test
-        assert_eq!(PathBuf::from(kernel), cfg.kernel);
+        let kernel_config: KernelConfig = kernel.try_into().unwrap();
+        assert_eq!(kernel_config, cfg.kernel);
         assert_eq!(1, cfg.cpus);
         assert_eq!(256, cfg.memory);
         assert_eq!(0, cfg.verbose);
         assert_eq!(console, cfg.console);
         assert_eq!(tap.unwrap(), net_config.unwrap().tap_name);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_config_fail() -> Result<(), crate::Error> {
+        let tap = Some(String::from("tap0"));
+        let console = Some(String::from("console.log"));
+        let kernel = String::from("./Cargo.tomle");
+
+        let opts: VMMOpts = VMMOpts {
+            kernel,
+            cpus: 1,
+            memory: 256,
+            verbose: 0,
+            console,
+            tap,
+        };
+        let cfg = VMMConfig::try_from(opts);
+        assert!(cfg.is_err());
+        Ok(())
     }
 }
