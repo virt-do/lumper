@@ -1,19 +1,23 @@
 use crate::config;
-use crate::config::VMMConfig;
+use crate::config::{KernelConfig, VMMConfig};
 use std::convert::TryInto;
-use std::path::PathBuf;
 
 impl VMMConfig {
     /// Create the builder to generate a vmm config
-    pub fn builder(num_vcpus: u8, mem_size_mb: u32, kernel_path: &str) -> VMMConfigBuilder {
-        VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)
+    pub fn builder(
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: String,
+    ) -> Result<VMMConfigBuilder, crate::Error> {
+        Ok(VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)
+            .map_err(crate::Error::ConfigError)?)
     }
 }
 
 /// See VMNConfig for explanation about these options
 #[derive(Debug, Default)]
 pub struct VMMConfigBuilder {
-    kernel: PathBuf,
+    kernel: KernelConfig,
     cpus: u8,
     memory: u32,
     verbose: i32,
@@ -36,14 +40,19 @@ impl VMMConfigBuilder {
 }
 
 impl VMMConfigBuilder {
-    // TODO: Maybe add a management of errors (e.g. checking kernel_path exists here)
-    pub fn new(num_vcpus: u8, mem_size_mb: u32, kernel_path: &str) -> Self {
-        VMMConfigBuilder {
+    pub fn new(
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: String,
+    ) -> Result<Self, config::Error> {
+        let builder = VMMConfigBuilder {
             cpus: num_vcpus,
             memory: mem_size_mb,
-            kernel: PathBuf::from(kernel_path),
+            kernel: kernel_path.try_into()?,
             ..Default::default()
-        }
+        };
+
+        Ok(builder)
     }
 
     pub fn verbose(mut self, lvl: i32) -> Self {

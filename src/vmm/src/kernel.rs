@@ -3,7 +3,6 @@
 #![cfg(target_arch = "x86_64")]
 
 use std::fs::File;
-use std::path::PathBuf;
 use std::result;
 
 use linux_loader::bootparam::boot_params;
@@ -12,6 +11,7 @@ use linux_loader::configurator::{linux::LinuxBootConfigurator, BootConfigurator,
 use linux_loader::loader::{elf::Elf, load_cmdline, KernelLoader, KernelLoaderResult};
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
 
+use crate::config::KernelConfig;
 use crate::{Error, Result};
 
 // x86_64 boot constants. See https://www.kernel.org/doc/Documentation/x86/boot.txt for the full
@@ -108,9 +108,9 @@ pub fn build_bootparams(
 ///                  configurations.
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
-    kernel_path: PathBuf,
+    kernel: KernelConfig,
 ) -> Result<KernelLoaderResult> {
-    let mut kernel_image = File::open(kernel_path).map_err(Error::IO)?;
+    let mut kernel_image = File::open(kernel.kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
 
     // Load the kernel into guest memory.
