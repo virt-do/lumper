@@ -52,6 +52,7 @@ impl TryFrom<VMMOpts> for VMMConfig {
 
         Ok(builder
             .tap(opts.tap)
+            .map_err(Error::ConfigParse)?
             .console(opts.console)
             .verbose(opts.verbose)
             .build())
@@ -87,7 +88,7 @@ mod tests {
     // to VMMConfig format
     #[test]
     fn test_parse_config_success() -> Result<(), crate::Error> {
-        let tap = Some(String::from("tap0"));
+        let tap = String::from("tap0");
         let console = Some(String::from("console.log"));
         let kernel = String::from("./Cargo.toml");
 
@@ -97,7 +98,7 @@ mod tests {
             memory: 256,
             verbose: 0,
             console: console.clone(),
-            tap: tap.clone(),
+            tap: Some(tap.clone()),
         };
         let cfg = VMMConfig::try_from(opts)?;
 
@@ -111,7 +112,7 @@ mod tests {
         assert_eq!(256, cfg.memory);
         assert_eq!(0, cfg.verbose);
         assert_eq!(console, cfg.console);
-        assert_eq!(tap.unwrap(), net_config.unwrap().tap_name);
+        assert_eq!(tap, net_config.unwrap().tap_name);
 
         Ok(())
     }

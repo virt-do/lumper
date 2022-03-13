@@ -8,10 +8,16 @@ const KERNEL_CMDLINE_CAPACITY: usize = 4096;
 // Default command line
 const KERNEL_CMDLINE_DEFAULT: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
 
+// Max size for an interface name
+const IFACE_NAME_MAX_LEN: usize = 16;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Kernel configuration file check error")]
     KernelConfig(String),
+
+    #[error("Tap configuration error")]
+    TapConfig(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -102,27 +108,37 @@ impl KernelConfig {
     }
 }
 
-impl TryFrom<Option<String>> for NetConfig {
-    // TODO: Add management to check if the tap name is valid for instance
-    type Error = crate::Error;
+impl TryFrom<String> for NetConfig {
+    type Error = Error;
 
-    fn try_from(tap_str: Option<String>) -> Result<Self, Self::Error> {
-        let tap_name = match tap_str {
-            Some(tap) => Ok(tap),
-            None => Err(Self::Error::TapError),
-        }?;
+    fn try_from(tap_str: String) -> Result<Self, Error> {
+        if tap_str.len() >= IFACE_NAME_MAX_LEN {
+            return Err(Error::TapConfig(format!(
+                "TAP name {} is too long",
+                tap_str
+            )));
+        }
 
-        Ok(NetConfig { tap_name: tap_name })
+        Ok(NetConfig { tap_name: tap_str })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Error as ConfigError;
     use crate::config::KernelConfig;
     use std::convert::TryInto;
 
     type Error = crate::Error;
+
+    #[test]
+    fn test_fail_string_long_netconfig() {
+        let invalid_if_name = String::from("this_string_is_way_too_long_for_tap_name");
+        let net_result: Result<NetConfig, ConfigError> = NetConfig::try_from(invalid_if_name);
+
+        assert!(net_result.is_err())
+    }
 
     #[test]
     fn test_success_try_from_kernelconfig() {
@@ -167,22 +183,10 @@ mod tests {
 
     #[test]
     fn test_success_try_from_string_netconfig() {
-        let origin = Some(String::from("str"));
+        let origin = String::from("str");
 
-        let target: Result<NetConfig, Error> = origin.clone().try_into();
+        let target: Result<NetConfig, ConfigError> = origin.clone().try_into();
         assert_eq!(false, target.is_err());
-        assert_eq!(
-            NetConfig {
-                tap_name: origin.unwrap(),
-            },
-            target.unwrap()
-        );
-    }
-
-    #[test]
-    fn test_fail_try_from_string_netconfig() {
-        let target: Result<NetConfig, Error> = None.try_into();
-        assert_eq!(true, target.is_err());
-        assert!(matches!(target.unwrap_err(), Error::TapError))
+        assert_eq!(NetConfig { tap_name: origin }, target.unwrap());
     }
 }
