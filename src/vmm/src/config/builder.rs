@@ -8,9 +8,8 @@ impl VMMConfig {
         num_vcpus: u8,
         mem_size_mb: u32,
         kernel_path: String,
-    ) -> Result<VMMConfigBuilder, crate::Error> {
-        Ok(VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)
-            .map_err(crate::Error::ConfigError)?)
+    ) -> Result<VMMConfigBuilder, config::Error> {
+        Ok(VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)?)
     }
 }
 

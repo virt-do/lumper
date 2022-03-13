@@ -2,7 +2,7 @@ use std::u32;
 
 use clap::Parser;
 use vmm::config::VMMConfig;
-use vmm::VMM;
+use vmm::{config, VMM};
 
 #[derive(Parser)]
 #[clap(version = "0.1", author = "Polytech Montpellier - DevOps")]
@@ -39,6 +39,8 @@ pub enum Error {
     VmmConfigure(vmm::Error),
 
     VmmRun(vmm::Error),
+
+    ConfigParse(config::Error),
 }
 
 impl TryFrom<VMMOpts> for VMMConfig {
@@ -46,7 +48,7 @@ impl TryFrom<VMMOpts> for VMMConfig {
 
     fn try_from(opts: VMMOpts) -> Result<Self, Error> {
         let builder =
-            VMMConfig::builder(opts.cpus, opts.memory, opts.kernel).map_err(Error::VmmConfigure)?;
+            VMMConfig::builder(opts.cpus, opts.memory, opts.kernel).map_err(Error::ConfigParse)?;
 
         Ok(builder
             .tap(opts.tap)
