@@ -1,6 +1,9 @@
 #!/usr/bin/bash
 apt install -y bison flex libelf-dev
 
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 LINUX_REPO=linux-cloud-hypervisor
 
 if [ ! -d $LINUX_REPO ]
@@ -9,6 +12,6 @@ then
 fi
 
 pushd $LINUX_REPO
-cp ./linux-config-x86_64 .config
+cp $SCRIPT_DIR/linux-config-x86_64 .config
 make bzImage -j `nproc`
 popd
