@@ -34,6 +34,7 @@ mod kernel;
 
 pub mod config;
 use crate::config::VMMConfig;
+use crate::devices::tap::Tap;
 
 #[derive(Debug, thiserror::Error)]
 /// VMM errors.
