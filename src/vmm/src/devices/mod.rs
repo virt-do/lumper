@@ -31,12 +31,32 @@ mod features {
     pub const VIRTIO_F_RING_EVENT_IDX: u64 = 29;
     pub const VIRTIO_F_VERSION_1: u64 = 32;
     pub const VIRTIO_F_IN_ORDER: u64 = 35;
+    pub const VIRTIO_NET_F_CSUM: u64 = 0;
+    pub const VIRTIO_NET_F_GUEST_CSUM: u64 = 1;
+    pub const VIRTIO_NET_F_GUEST_TSO4: u64 = 7;
+    pub const VIRTIO_NET_F_GUEST_TSO6: u64 = 8;
+    pub const VIRTIO_NET_F_GUEST_UFO: u64 = 10;
+    pub const VIRTIO_NET_F_HOST_TSO4: u64 = 11;
+    pub const VIRTIO_NET_F_HOST_TSO6: u64 = 12;
+    pub const VIRTIO_NET_F_HOST_UFO: u64 = 14;
 }
+
+// Size of the `virtio_net_hdr` structure defined by the standard.
+pub const VIRTIO_NET_HDR_SIZE: usize = 12;
 
 // The driver will write to the register at this offset in the MMIO region to notify the device
 // about available queue events.
 const VIRTIO_MMIO_QUEUE_NOTIFY_OFFSET: u64 = 0x50;
 const VIRTIO_QUEUE_MAX_SIZE: u16 = 256;
+
+// Net device ID as defined by the standard.
+pub const NET_DEVICE_ID: u32 = 1;
+
+// Prob have to find better names here, but these basically represent the order of the queues.
+// If the net device has a single RX/TX pair, then the former has index 0 and the latter 1. When
+// the device has multiqueue support, then RX queues have indices 2k, and TX queues 2k+1.
+const RXQ_INDEX: u16 = 0;
+const TXQ_INDEX: u16 = 1;
 
 /// Custom defined [`std::result::Result`]
 pub type Result<T> = std::result::Result<T, Error>;
