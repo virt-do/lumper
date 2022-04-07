@@ -8,9 +8,9 @@ impl VMMConfig {
     pub fn builder(
         num_vcpus: u8,
         mem_size_mb: u32,
-        kernel_path: String,
+        kernel: KernelConfig,
     ) -> Result<VMMConfigBuilder, config::Error> {
-        Ok(VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel_path)?)
+        Ok(VMMConfigBuilder::new(num_vcpus, mem_size_mb, kernel)?)
     }
 }
 
@@ -45,12 +45,12 @@ impl VMMConfigBuilder {
     pub fn new(
         num_vcpus: u8,
         mem_size_mb: u32,
-        kernel_path: String,
+        kernel: KernelConfig,
     ) -> Result<Self, config::Error> {
         let builder = VMMConfigBuilder {
             cpus: num_vcpus,
             memory: mem_size_mb,
-            kernel: kernel_path.try_into()?,
+            kernel: kernel,
             ..Default::default()
         };
 
