@@ -5,8 +5,9 @@ use std::path::PathBuf;
 mod builder;
 
 const KERNEL_CMDLINE_CAPACITY: usize = 4096;
-// Default command line
-const KERNEL_CMDLINE_DEFAULT: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
+// Default command line, public for tests
+#[doc(hidden)]
+pub const KERNEL_CMDLINE_DEFAULT: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
 
 // Max size for an interface name
 pub const IFACE_NAME_MAX_LEN: usize = 16;
@@ -28,7 +29,7 @@ pub struct NetConfig {
 /// VMM configuration.
 #[derive(Debug, Default)]
 pub struct VMMConfig {
-    /// Linux kernel path
+    /// Linux kernel path and its commandline
     pub kernel: KernelConfig,
 
     /// Initramfs path
@@ -66,14 +67,14 @@ impl TryFrom<String> for KernelConfig {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let path = PathBuf::from(value);
+        if !path.exists() {
+            return Err(Error::KernelConfig("File does not exist".to_string()));
+        }
+
         let kernel = KernelConfig {
             kernel_path: path.clone(),
             ..Default::default()
         };
-
-        if !path.exists() {
-            return Err(Error::KernelConfig("File does not exist".to_string()));
-        }
 
         Ok(kernel)
     }
