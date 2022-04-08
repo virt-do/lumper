@@ -11,6 +11,7 @@ extern crate vm_superio;
 use std::fs::File;
 use std::io;
 use std::io::stdout;
+use std::ops::DerefMut;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
@@ -28,13 +29,23 @@ use devices::serial::LumperSerial;
 
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
+use event_manager::{EventManager, MutEventSubscriber, SubscriberOps};
+use vm_device::bus::{MmioAddress, MmioRange};
 use vm_device::device_manager::IoManager;
 
 mod kernel;
 
 pub mod config;
-use crate::config::VMMConfig;
+use crate::config::{KernelConfig, VMMConfig};
+use crate::devices::{Env, MmioConfig};
 use crate::devices::tap::Tap;
+
+/// First address past 32 bits is where the MMIO gap ends.
+pub(crate) const MMIO_GAP_END: u64 = 1 << 32;
+/// Size of the MMIO gap.
+pub(crate) const MMIO_GAP_SIZE: u64 = 768 << 20;
+/// The start of the MMIO gap (memory area reserved for MMIO devices).
+pub(crate) const MMIO_GAP_START: u64 = MMIO_GAP_END - MMIO_GAP_SIZE;
 
 #[derive(Debug, thiserror::Error)]
 /// VMM errors.
@@ -89,6 +100,12 @@ pub enum Error {
 
     #[error("TAP interface could not be found or not specified")]
     Tap(devices::Error),
+
+    #[error("Could not create EventManager")]
+    EventManager(event_manager::Error),
+
+    #[error("Could not allocate MMIORange")]
+    Mmio(vm_device::bus::Error)
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -102,9 +119,15 @@ pub struct VMM {
     kvm: Kvm,
     guest_memory: GuestMemoryMmap,
     vcpus: Vec<Vcpu>,
+    kernel_cfg: KernelConfig,
 
     // Property used by various threads (vcpus) by DeviceMMio & DevicePio impl.
     io_mgr: Arc<Mutex<IoManager>>,
+    // The event Manager is used in order to check if the device deployed has been
+    // activated or not. As stated by the transcript of VirtIO devices, the guest
+    // MUST validate the startup of the VirtIO device from its side before we start it up
+    // from our side.
+    event_mgr: EventManager<Arc<Mutex<dyn MutEventSubscriber + Send>>>,
 
     serial: Arc<Mutex<LumperSerial>>,
     epoll: EpollContext,
@@ -124,6 +147,7 @@ impl VMM {
         epoll.add_stdin().map_err(Error::EpollError)?;
 
         let io_mgr = Arc::new(Mutex::new(IoManager::new()));
+        let event_manager = EventManager::new().map_err(Error::EventManager)?;
 
         let vmm = VMM {
             vm_fd,
@@ -135,6 +159,8 @@ impl VMM {
             )),
             io_mgr,
             epoll,
+            event_mgr: event_manager,
+            kernel_cfg: KernelConfig::default(),
         };
 
         Ok(vmm)
@@ -172,6 +198,35 @@ impl VMM {
 
         Ok(())
     }
+
+    pub fn configure_network(&mut self, net_config: config::NetConfig) -> Result<()> {
+        // We clone memory range because we'll need to fetch the next range of memory available
+        let mem = Arc::new(self.guest_memory.clone());
+
+        // Provisioning a range of RAM for the net device
+        // 0x1000 = 4KiB
+        // See MMIO_GAP_SIZE to understand why this size
+        let addr = (MmioAddress(MMIO_GAP_START), 0x1000);
+        let range = MmioRange::new(addr.0, addr.1).map_err(Error::Mmio)?;
+
+        // GSI=5, but not sure why I can't go below 5
+        // TODO: test if it works with gsi < 5
+        let mmio_cfg = MmioConfig { range, gsi: 5 };
+        let mut guard = self.io_mgr.lock().unwrap();
+
+/*        let mut env = Env {
+            mem,
+            vm_fd: self.vm_fd(),
+            event_mgr: &mut self.event_mgr,
+            mmio_mgr: guard.deref_mut(),
+            mmio_cfg,
+            kernel_cmdline: &mut self.kernel_cfg.cmdline,
+        };
+
+        let tap = Tap::open_named(net_config.tap_name.as_str()).map_err(Error::Tap)?;*/
+        Ok(())
+    }
+
 
     pub fn configure_io(&mut self) -> Result<()> {
         // First, create the irqchip.
@@ -295,12 +350,21 @@ impl VMM {
         }
     }
 
+    fn configure_kernel(&mut self, kernel_cfg: KernelConfig) {
+        self.kernel_cfg = kernel_cfg;
+    }
+
     pub fn configure(&mut self, cfg: VMMConfig) -> Result<()> {
         self.configure_console(cfg.console)?;
         self.configure_memory(cfg.memory)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel)?;
+        self.configure_kernel(cfg.kernel);
+        let kernel_load = kernel::kernel_setup(&self.guest_memory, &self.kernel_cfg)?;
         self.configure_io()?;
         self.configure_vcpus(cfg.cpus, kernel_load)?;
+
+        if let Some(net_conf) = cfg.tap {
+            self.configure_network(net_conf)?;
+        }
 
         Ok(())
     }

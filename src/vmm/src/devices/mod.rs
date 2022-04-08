@@ -25,6 +25,7 @@ use vmm_sys_util::eventfd::EventFd;
 mod bindings;
 pub(crate) mod serial;
 pub mod tap;
+mod net;
 mod queue_handler;
 mod simple_handler;
 
