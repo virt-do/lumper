@@ -108,7 +108,7 @@ pub fn build_bootparams(
 ///                  configurations.
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
-    kernel: KernelConfig,
+    kernel: &KernelConfig,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel.kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);

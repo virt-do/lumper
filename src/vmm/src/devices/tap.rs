@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::{Error as IoError, Read, Result as IoResult, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::os::unix::prelude::RawFd;
-use std::panic::catch_unwind;
 use vmm_sys_util::ioctl::{ioctl_with_mut_ref, ioctl_with_ref, ioctl_with_val};
 use vmm_sys_util::{ioctl_expr, ioctl_ioc_nr, ioctl_iow_nr};
 
@@ -24,7 +23,7 @@ ioctl_iow_nr!(TUNSETVNETHDRSZ, TUNTAP, 216, ::std::os::raw::c_int);
 /// Virtual Tunnel struct used create a TUN/TAP device
 #[derive(Debug)]
 pub struct Tap {
-    file: File,
+    pub file: File,
     pub(crate) if_name: [u8; IFACE_NAME_MAX_LEN],
 }
 

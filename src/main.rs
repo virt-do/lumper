@@ -75,7 +75,6 @@ fn main() -> Result<(), Error> {
 
     // Run the VMM
     vmm.run().map_err(Error::VmmRun)?;
-
     Ok(())
 }
 
