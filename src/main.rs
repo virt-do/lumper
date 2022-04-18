@@ -11,6 +11,10 @@ struct VMMOpts {
     #[clap(short, long)]
     kernel: String,
 
+    /// initramfs path
+    #[clap(short, long)]
+    initramfs: Option<String>,
+
     /// Number of virtual CPUs assigned to the guest
     #[clap(short, long, default_value = "1")]
     cpus: u8,
@@ -51,6 +55,7 @@ impl TryFrom<VMMOpts> for VMMConfig {
             VMMConfig::builder(opts.cpus, opts.memory, opts.kernel).map_err(Error::ConfigParse)?;
 
         Ok(builder
+            .initramfs(opts.initramfs)
             .tap(opts.tap)
             .map_err(Error::ConfigParse)?
             .console(opts.console)
@@ -98,6 +103,7 @@ mod tests {
             memory: 256,
             verbose: 0,
             console: console.clone(),
+            initramfs: None,
             tap: Some(tap.clone()),
         };
         let cfg = VMMConfig::try_from(opts)?;
@@ -129,6 +135,7 @@ mod tests {
             memory: 256,
             verbose: 0,
             console,
+            initramfs: None,
             tap,
         };
         let cfg = VMMConfig::try_from(opts);
