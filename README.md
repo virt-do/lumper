@@ -6,7 +6,7 @@
 
 **Project is experimental and should not be used in any production systems.**
 
-## Quick start
+## Quick start (without Docker)
 
 ### Prerequisites
 
@@ -51,6 +51,17 @@ To see all the available arguments :
 
 ```bash
 ./target/release/lumper --help
+```
+
+## Quick start (with Docker)
+If you have `docker` installed you can use the Dockerfile directly.
+```bash
+docker build -t lumper .
+docker run --device=/dev/kvm -it lumper bash
+```
+Then you can launch a sample VM:
+```bash
+./target/release/lumper --kernel linux-cloud-hypervisor/vmlinux --initramfs initramfs.img
 ```
 
 ## How to contribute ?
