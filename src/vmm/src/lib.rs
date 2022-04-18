@@ -47,6 +47,12 @@ pub enum Error {
     #[error("Failed to load kernel: {0}")]
     KernelLoad(loader::Error),
 
+    #[error("Failed to load initramfs")]
+    InitramfsLoad,
+
+    #[error("Failed to compute initramfs address")]
+    InitramfsAddress,
+
     #[error("Invalid E820 configuration")]
     E820Configuration,
 
@@ -88,6 +94,20 @@ pub enum Error {
 
     #[error("TAP interface could not be found or not specified")]
     Tap(devices::Error),
+}
+
+// Safe wrapper for `sysconf(_SC_PAGESIZE)`.
+#[inline(always)]
+fn pagesize() -> usize {
+    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+}
+
+/// Type for passing information about the initramfs in the guest memory.
+pub struct InitramfsConfig {
+    /// Load address of initramfs in guest memory
+    pub address: vm_memory::GuestAddress,
+    /// Size of initramfs in guest memory
+    pub size: usize,
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -297,7 +317,7 @@ impl VMM {
     pub fn configure(&mut self, cfg: VMMConfig) -> Result<()> {
         self.configure_console(cfg.console)?;
         self.configure_memory(cfg.memory)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel)?;
+        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel, None)?;
         self.configure_io()?;
         self.configure_vcpus(cfg.cpus, kernel_load)?;
 
