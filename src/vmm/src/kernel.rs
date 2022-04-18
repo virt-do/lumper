@@ -2,17 +2,20 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use std::convert::TryInto;
 use std::fs::File;
+use std::io::{Seek, SeekFrom};
+use std::path::PathBuf;
 use std::result;
 
+use crate::{pagesize, Error, InitramfsConfig, Result};
 use linux_loader::bootparam::boot_params;
 use linux_loader::cmdline::Cmdline;
 use linux_loader::configurator::{linux::LinuxBootConfigurator, BootConfigurator, BootParams};
 use linux_loader::loader::{elf::Elf, load_cmdline, KernelLoader, KernelLoaderResult};
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
 
 use crate::config::KernelConfig;
-use crate::{Error, Result};
+use vm_memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 
 // x86_64 boot constants. See https://www.kernel.org/doc/Documentation/x86/boot.txt for the full
 // documentation.
@@ -109,6 +112,7 @@ pub fn build_bootparams(
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel: KernelConfig,
+    initramfs: Option<PathBuf>,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel.kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
@@ -140,6 +144,14 @@ pub fn kernel_setup(
     )
     .map_err(Error::KernelLoad)?;
 
+    // Load initramfs
+    if let Some(initramfs_config) = initramfs {
+        let initramfs_load =
+            load_initramfs(guest_memory, initramfs_config).map_err(|_| Error::InitramfsLoad)?;
+        bootparams.hdr.ramdisk_image = initramfs_load.address.raw_value() as u32;
+        bootparams.hdr.ramdisk_size = initramfs_load.size as u32;
+    }
+
     // Write the boot parameters in the zeropage.
     LinuxBootConfigurator::write_bootparams::<GuestMemoryMmap>(
         &BootParams::new::<boot_params>(&bootparams, zero_page_addr),
@@ -148,4 +160,35 @@ pub fn kernel_setup(
     .map_err(Error::BootConfigure)?;
 
     Ok(kernel_load)
+}
+
+pub fn load_initramfs(guest_mem: &GuestMemoryMmap, initramfs: PathBuf) -> Result<InitramfsConfig> {
+    let mut initramfs = File::open(initramfs).map_err(Error::IO)?;
+
+    let size: usize = initramfs
+        .seek(SeekFrom::End(0))
+        .map_err(|_| Error::InitramfsLoad)?
+        .try_into()
+        .unwrap();
+    initramfs
+        .seek(SeekFrom::Start(0))
+        .map_err(|_| Error::InitramfsLoad)?;
+
+    let first_region = guest_mem
+        .find_region(GuestAddress::new(0))
+        .ok_or(Error::InitramfsAddress)?;
+    let lowmem_size = first_region.len() as usize;
+
+    if lowmem_size < size {
+        return Err(Error::InitramfsAddress);
+    }
+
+    let aligned_addr: u64 = ((lowmem_size - size) & !(pagesize() - 1)) as u64;
+    let address = GuestAddress(aligned_addr);
+
+    guest_mem
+        .read_from(address, &mut initramfs, size)
+        .map_err(|_| Error::InitramfsLoad)?;
+
+    Ok(InitramfsConfig { address, size })
 }
