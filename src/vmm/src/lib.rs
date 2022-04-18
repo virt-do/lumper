@@ -317,7 +317,7 @@ impl VMM {
     pub fn configure(&mut self, cfg: VMMConfig) -> Result<()> {
         self.configure_console(cfg.console)?;
         self.configure_memory(cfg.memory)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel, None)?;
+        let kernel_load = kernel::kernel_setup(&self.guest_memory, cfg.kernel, cfg.initramfs)?;
         self.configure_io()?;
         self.configure_vcpus(cfg.cpus, kernel_load)?;
 

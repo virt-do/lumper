@@ -1,6 +1,7 @@
 use crate::config;
 use crate::config::{KernelConfig, NetConfig, VMMConfig};
 use std::convert::TryInto;
+use std::path::PathBuf;
 
 impl VMMConfig {
     /// Create the builder to generate a vmm config
@@ -17,6 +18,7 @@ impl VMMConfig {
 #[derive(Debug, Default)]
 pub struct VMMConfigBuilder {
     kernel: KernelConfig,
+    initramfs: Option<PathBuf>,
     cpus: u8,
     memory: u32,
     verbose: i32,
@@ -29,6 +31,7 @@ impl VMMConfigBuilder {
     pub fn build(self) -> VMMConfig {
         VMMConfig {
             kernel: self.kernel,
+            initramfs: self.initramfs,
             cpus: self.cpus,
             memory: self.memory,
             verbose: self.verbose,
@@ -61,6 +64,14 @@ impl VMMConfigBuilder {
 
     pub fn console(mut self, console: Option<String>) -> Self {
         self.console = console;
+        self
+    }
+
+    pub fn initramfs(mut self, initramfs_path: Option<String>) -> Self {
+        self.initramfs = match initramfs_path {
+            Some(initramfs) => Some(PathBuf::from(initramfs)),
+            None => None,
+        };
         self
     }
 

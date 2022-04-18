@@ -31,6 +31,9 @@ pub struct VMMConfig {
     /// Linux kernel path
     pub kernel: KernelConfig,
 
+    /// Initramfs path
+    pub initramfs: Option<PathBuf>,
+
     /// Number of virtual CPUs assigned to the guest
     pub cpus: u8,
 
