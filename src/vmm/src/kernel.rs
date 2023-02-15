@@ -130,7 +130,8 @@ pub fn kernel_setup(
     bootparams.hdr.cmdline_size = CMDLINE.len() as u32 + 1;
 
     // Load the kernel command line into guest memory.
-    let mut cmdline = Cmdline::new(CMDLINE.len() + 1);
+    let mut cmdline = Cmdline::new(CMDLINE.len() + 1).map_err(Error::Cmdline)?;
+
     cmdline.insert_str(CMDLINE).map_err(Error::Cmdline)?;
     load_cmdline(
         guest_memory,
