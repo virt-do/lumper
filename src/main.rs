@@ -19,12 +19,12 @@ struct VMMOpts {
     memory: u32,
 
     /// A level of verbosity, and can be used multiple times
-    #[clap(short, long, parse(from_occurrences))]
-    verbose: i32,
+    #[clap(short, long, action=clap::ArgAction::Count )]
+    verbose: u8,
 
     /// Stdout console file path
     #[clap(long)]
-    console: Option<String>
+    console: Option<String>,
 }
 
 #[derive(Debug)]
