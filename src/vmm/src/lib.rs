@@ -183,10 +183,7 @@ impl VMM {
         Ok(())
     }
 
-    pub fn configure_console(
-        &mut self,
-        console_path: Option<String>
-    ) -> Result<()> {
+    pub fn configure_console(&mut self, console_path: Option<String>) -> Result<()> {
         if let Some(console_path) = console_path {
             // We create the file if it does not exist, else we open
             let file = File::create(&console_path).map_err(Error::ConsoleError)?;
