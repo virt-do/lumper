@@ -236,6 +236,16 @@ impl VMM {
         Ok(())
     }
 
+    pub fn configure_initramfs(&mut self, initramfs_path: Option<String>) -> Result<()> {
+        if let Some(initramfs_path) = initramfs_path {
+            self.cmdline
+                .insert_str(format!(" initrd={} root=/dev/ram0 rw", initramfs_path))
+                .map_err(Error::Cmdline)?;
+        }
+
+        Ok(())
+    }
+
     // Run all virtual CPUs.
     pub fn run(&mut self) -> Result<()> {
         for mut vcpu in self.vcpus.drain(..) {
@@ -283,11 +293,13 @@ impl VMM {
         mem_size_mb: u32,
         kernel_path: &str,
         console: Option<String>,
+        initramfs_path: Option<String>,
     ) -> Result<()> {
         self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
 
         self.load_default_cmdline()?;
+        self.configure_initramfs(initramfs_path)?;
 
         let kernel_load = kernel::kernel_setup(
             &self.guest_memory,

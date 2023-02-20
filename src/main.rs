@@ -25,6 +25,10 @@ struct VMMOpts {
     /// Stdout console file path
     #[clap(long)]
     console: Option<String>,
+
+    /// Initramfs path
+    #[clap(long)]
+    initramfs: Option<String>,
 }
 
 #[derive(Debug)]
@@ -47,8 +51,14 @@ fn main() -> Result<(), Error> {
     // * Memory size (in MB)
     // * Path to a Linux kernel
     // * Optional path to console file
-    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console)
-        .map_err(Error::VmmConfigure)?;
+    vmm.configure(
+        opts.cpus,
+        opts.memory,
+        &opts.kernel,
+        opts.console,
+        opts.initramfs,
+    )
+    .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
     vmm.run().map_err(Error::VmmRun)?;
