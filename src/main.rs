@@ -10,6 +10,10 @@ struct VMMOpts {
     #[clap(short, long)]
     kernel: String,
 
+    /// Initramfs path
+    #[clap(short, long)]
+    initramfs: Option<String>,
+
     /// Number of virtual CPUs assigned to the guest
     #[clap(short, long, default_value = "1")]
     cpus: u8,
@@ -47,8 +51,14 @@ fn main() -> Result<(), Error> {
     // * Memory size (in MB)
     // * Path to a Linux kernel
     // * Optional path to console file
-    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console)
-        .map_err(Error::VmmConfigure)?;
+    vmm.configure(
+        opts.cpus,
+        opts.memory,
+        &opts.kernel,
+        opts.console,
+        opts.initramfs,
+    )
+    .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
     vmm.run().map_err(Error::VmmRun)?;

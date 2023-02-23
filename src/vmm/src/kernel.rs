@@ -10,7 +10,7 @@ use linux_loader::bootparam::boot_params;
 use linux_loader::cmdline::Cmdline;
 use linux_loader::configurator::{linux::LinuxBootConfigurator, BootConfigurator, BootParams};
 use linux_loader::loader::{elf::Elf, load_cmdline, KernelLoader, KernelLoaderResult};
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
+use vm_memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap};
 
 use crate::{Error, Result};
 
@@ -109,6 +109,7 @@ pub fn build_bootparams(
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel_path: PathBuf,
+    initramfs_path: Option<String>,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
@@ -128,6 +129,30 @@ pub fn kernel_setup(
     // Add the kernel command line to the boot parameters.
     bootparams.hdr.cmd_line_ptr = CMDLINE_START as u32;
     bootparams.hdr.cmdline_size = CMDLINE.len() as u32 + 1;
+
+    // Add the initramfs to the boot parameters if one was provided.
+    if let Some(initramfs_path) = initramfs_path {
+        // Open the initramfs file
+        let mut initramfs_file = File::open(initramfs_path).map_err(Error::IO)?;
+        let initramfs_size = initramfs_file.metadata().unwrap().len() as usize;
+
+        // Find the address where the initramfs should be loaded.
+        // The initramfs is loaded right after the kernel.
+        let initramfs_address = kernel_load.kernel_end + 1;
+
+        // Load the initramfs into guest memory.
+        guest_memory
+            .read_from(
+                GuestAddress(initramfs_address),
+                &mut initramfs_file,
+                initramfs_size,
+            )
+            .map_err(|_| Error::InitramfsLoad)?;
+
+        // Set the initramfs address and size in the boot parameters.
+        bootparams.hdr.ramdisk_image = initramfs_address as u32;
+        bootparams.hdr.ramdisk_size = initramfs_size as u32;
+    }
 
     // Load the kernel command line into guest memory.
     let mut cmdline = Cmdline::new(CMDLINE.len() + 1).map_err(Error::Cmdline)?;

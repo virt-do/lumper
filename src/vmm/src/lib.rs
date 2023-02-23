@@ -40,6 +40,8 @@ pub enum Error {
     Cmdline(linux_loader::cmdline::Error),
     /// Failed to load kernel.
     KernelLoad(loader::Error),
+    /// Failed to load initrd.
+    InitramfsLoad,
     /// Invalid E820 configuration.
     E820Configuration,
     /// Highmem start address is past the guest memory end.
@@ -266,10 +268,21 @@ impl VMM {
         }
     }
 
-    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
+    pub fn configure(
+        &mut self,
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: &str,
+        console: Option<String>,
+        initramfs_path: Option<String>,
+    ) -> Result<()> {
         self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
+        let kernel_load = kernel::kernel_setup(
+            &self.guest_memory,
+            PathBuf::from(kernel_path),
+            initramfs_path,
+        )?;
         self.configure_io()?;
         self.configure_vcpus(num_vcpus, kernel_load)?;
 
