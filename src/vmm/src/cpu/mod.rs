@@ -8,6 +8,8 @@ use std::{result, u64};
 
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId};
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
+use vm_device::bus::MmioAddress;
+use vm_device::device_manager::{IoManager, MmioManager};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryError, GuestMemoryMmap};
 use vmm_sys_util::terminal::Terminal;
 
@@ -66,15 +68,22 @@ pub(crate) struct Vcpu {
     pub vcpu_fd: VcpuFd,
 
     serial: Arc<Mutex<LumperSerial>>,
+    virtio_manager: Arc<Mutex<IoManager>>,
 }
 
 impl Vcpu {
     /// Create a new vCPU.
-    pub fn new(vm_fd: &VmFd, index: u64, serial: Arc<Mutex<LumperSerial>>) -> Result<Self> {
+    pub fn new(
+        vm_fd: &VmFd,
+        index: u64,
+        serial: Arc<Mutex<LumperSerial>>,
+        virtio_manager: Arc<Mutex<IoManager>>,
+    ) -> Result<Self> {
         Ok(Vcpu {
             index,
             vcpu_fd: vm_fd.create_vcpu(index).map_err(Error::KvmIoctl)?,
             serial,
+            virtio_manager,
         })
     }
 
@@ -266,10 +275,32 @@ impl Vcpu {
                         println!("Unsupported device read at {:x?}", addr);
                     }
                 },
+
+                // This is a MMIO write, i.e. the guest is trying to write
+                // something to a memory-mapped I/O region.
+                VcpuExit::MmioWrite(addr, data) => {
+                    self.virtio_manager
+                        .lock()
+                        .unwrap()
+                        .mmio_write(MmioAddress(addr), data)
+                        .unwrap();
+                }
+
+                // This is a MMIO read, i.e. the guest is trying to read
+                // from a memory-mapped I/O region.
+                VcpuExit::MmioRead(addr, data) => {
+                    self.virtio_manager
+                        .lock()
+                        .unwrap()
+                        .mmio_read(MmioAddress(addr), data)
+                        .unwrap();
+                }
+
                 _ => {
                     eprintln!("Unhandled VM-Exit: {:?}", exit_reason);
                 }
             },
+
             Err(e) => eprintln!("Emulation error: {}", e),
         }
     }
