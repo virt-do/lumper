@@ -274,7 +274,10 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "vm-device"
 version = "0.1.0"
-source = "git+https://github.com/rust-vmm/vm-device?rev=5847f12#5847f1286492b7191f1400e6647fb220f8941f89"
+source = "git+https://github.com/lucido-simon/vm-device?rev=5619cec076594881ddf8a38978c50923b3434494#5619cec076594881ddf8a38978c50923b3434494"
+dependencies = [
+ "vm-memory",
+]
 
 [[package]]
 name = "vm-memory"
