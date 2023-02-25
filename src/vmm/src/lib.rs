@@ -19,6 +19,7 @@ use std::fs::File;
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::{self, KernelLoaderResult};
+use vm_device::device_manager::IoManager;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::terminal::Terminal;
 mod cpu;
@@ -78,6 +79,7 @@ pub struct VMM {
     vcpus: Vec<Vcpu>,
 
     serial: Arc<Mutex<LumperSerial>>,
+    virtio_manager: Arc<Mutex<IoManager>>,
     epoll: EpollContext,
 }
 
@@ -102,6 +104,7 @@ impl VMM {
             serial: Arc::new(Mutex::new(
                 LumperSerial::new(Box::new(stdout())).map_err(Error::SerialCreation)?,
             )),
+            virtio_manager: Arc::new(Mutex::new(IoManager::new())),
             epoll,
         };
 
@@ -193,8 +196,13 @@ impl VMM {
             .map_err(Error::KvmIoctl)?;
 
         for index in 0..num_vcpus {
-            let vcpu = Vcpu::new(&self.vm_fd, index.into(), Arc::clone(&self.serial))
-                .map_err(Error::Vcpu)?;
+            let vcpu = Vcpu::new(
+                &self.vm_fd,
+                index.into(),
+                Arc::clone(&self.serial),
+                Arc::clone(&self.virtio_manager),
+            )
+            .map_err(Error::Vcpu)?;
 
             // Set CPUID.
             let mut vcpu_cpuid = base_cpuid.clone();
