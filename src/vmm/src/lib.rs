@@ -8,13 +8,13 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
-use std::fs::File;
 
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
@@ -29,6 +29,13 @@ use devices::serial::LumperSerial;
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 mod kernel;
+
+/// End the mmio gap at the last 32-bit address
+const MMIO_GAP_END: usize = 1 << 32;
+/// Size of the MMIO gap
+const MMIO_GAP_SIZE: usize = 32 << 20;
+/// Start of the MMIO gap
+const MMIO_GAP_START: usize = MMIO_GAP_END - MMIO_GAP_SIZE;
 
 #[derive(Debug)]
 
@@ -112,8 +119,19 @@ impl VMM {
         // Convert memory size from MBytes to bytes.
         let mem_size = ((mem_size_mb as u64) << 20) as usize;
 
-        // Create one single memory region, from zero to mem_size.
-        let mem_regions = vec![(GuestAddress(0), mem_size)];
+        // Check if the memory is overlapping with the MMIO gap.
+        // If it is, split the memory into two regions.
+
+        let mem_regions = if mem_size < MMIO_GAP_START {
+            vec![(GuestAddress(0), mem_size)]
+        } else {
+            vec![
+                (GuestAddress(0), MMIO_GAP_START),
+                (GuestAddress(MMIO_GAP_END as u64), mem_size - MMIO_GAP_END),
+            ]
+        };
+
+        let mem_regions = vec![(GuestAddress(0), MMIO_GAP_START)];
 
         // Allocate the guest memory from the memory region.
         let guest_memory = GuestMemoryMmap::from_ranges(&mem_regions).map_err(Error::Memory)?;
@@ -164,10 +182,7 @@ impl VMM {
         Ok(())
     }
 
-    pub fn configure_console(
-        &mut self,
-        console_path: Option<String>
-    ) -> Result<()> {
+    pub fn configure_console(&mut self, console_path: Option<String>) -> Result<()> {
         if let Some(console_path) = console_path {
             // We create the file if it does not exist, else we open
             let file = File::create(&console_path).map_err(Error::ConsoleError)?;
@@ -266,7 +281,13 @@ impl VMM {
         }
     }
 
-    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
+    pub fn configure(
+        &mut self,
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: &str,
+        console: Option<String>,
+    ) -> Result<()> {
         self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
         let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
