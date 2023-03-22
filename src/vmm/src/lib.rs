@@ -8,6 +8,7 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::any::Any;
 use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
@@ -83,6 +84,10 @@ pub enum Error {
     VirtioNet(devices::net::VirtioNetError),
     /// Error related to IOManager.
     IoManager(vm_device::device_manager::Error),
+    /// Access thread handler error
+    AccessThreadHandlerError,
+    /// Join thread error
+    JoinThreadError(Box<dyn Any + Send>),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -248,7 +253,19 @@ impl VMM {
         Ok(())
     }
 
-    pub fn configure_console(&mut self, console_path: Option<String>) -> Result<()> {
+    pub fn configure_console(
+        &mut self,
+        console_path: Option<String>,
+        disable_console: bool,
+    ) -> Result<()> {
+        if disable_console {
+            return Ok(());
+        }
+
+        self.cmdline
+            .insert_str("console=ttyS0")
+            .map_err(Error::Cmdline)?;
+
         if let Some(console_path) = console_path {
             // We create the file if it does not exist, else we open
             let file = File::create(&console_path).map_err(Error::ConsoleError)?;
@@ -312,12 +329,39 @@ impl VMM {
     }
 
     // Run all virtual CPUs.
-    pub fn run(&mut self) -> Result<()> {
+    pub fn run(&mut self, no_console: bool) -> Result<()> {
+        let mut handlers: Vec<thread::JoinHandle<_>> = Vec::new();
+        let should_stop = Arc::new(Mutex::new(false));
+
         for mut vcpu in self.vcpus.drain(..) {
             println!("Starting vCPU {:?}", vcpu.index);
-            let _ = thread::Builder::new().spawn(move || loop {
-                vcpu.run();
+
+            let should_stop_cloned = Arc::clone(&should_stop);
+
+            let handler = thread::Builder::new().spawn(move || loop {
+                if *should_stop_cloned.lock().unwrap() {
+                    println!("Stopping vCPU {:?}", vcpu.index);
+                    break;
+                }
+
+                vcpu.run(no_console, Arc::clone(&should_stop_cloned));
             });
+
+            match handler {
+                Ok(handler) => handlers.push(handler),
+                Err(_) => {
+                    println!("Failed to start vCPU");
+                    return Err(Error::AccessThreadHandlerError);
+                }
+            }
+        }
+
+        if no_console {
+            for handler in handlers {
+                handler.join().map_err(Error::JoinThreadError)?
+            }
+
+            return Ok(()); // We don't want to start the console if we are in no_console mode.
         }
 
         let stdin = io::stdin();
@@ -380,10 +424,11 @@ impl VMM {
         mem_size_mb: u32,
         kernel_path: &str,
         console: Option<String>,
+        no_console: bool,
         initramfs_path: Option<String>,
         if_name: Option<String>,
     ) -> Result<()> {
-        self.configure_console(console)?;
+        self.configure_console(console, no_console)?;
         self.configure_memory(mem_size_mb)?;
         self.load_default_cmdline()?;
 

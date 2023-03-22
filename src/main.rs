@@ -33,6 +33,10 @@ struct VMMOpts {
     /// Interface name
     #[clap(long)]
     net: Option<String>,
+
+    /// no-console
+    #[clap(long)]
+    no_console: bool,
 }
 
 #[derive(Debug)]
@@ -60,13 +64,14 @@ fn main() -> Result<(), Error> {
         opts.memory,
         &opts.kernel,
         opts.console,
+        opts.no_console,
         opts.initramfs,
         opts.net,
     )
     .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
-    vmm.run().map_err(Error::VmmRun)?;
+    vmm.run(opts.no_console).map_err(Error::VmmRun)?;
 
     Ok(())
 }

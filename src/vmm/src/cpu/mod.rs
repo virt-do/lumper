@@ -223,20 +223,30 @@ impl Vcpu {
     }
 
     /// vCPU emulation loop.
-    pub fn run(&mut self) {
+    pub fn run(&mut self, no_console: bool, should_stop: Arc<Mutex<bool>>) {
         // Call into KVM to launch (VMLAUNCH) or resume (VMRESUME) the virtual CPU.
         // This is a blocking function, it only returns for either an error or a
         // VM-Exit. In the latter case, we can inspect the exit reason.
-        match self.vcpu_fd.run() {
+        println!("Before running vCPU {}...", self.index);
+        let run = self.vcpu_fd.run();
+        println!("After running vCPU {}...", self.index);
+
+        match run {
             Ok(exit_reason) => match exit_reason {
                 // The VM stopped (Shutdown ot HLT).
                 VcpuExit::Shutdown | VcpuExit::Hlt => {
                     println!("Guest shutdown: {:?}. Bye!", exit_reason);
-                    let stdin = io::stdin();
-                    let stdin_lock = stdin.lock();
-                    stdin_lock.set_canon_mode().unwrap();
 
-                    unsafe { libc::exit(0) };
+                    if no_console {
+                        println!("Exiting... {:?}", self.index);
+                        *should_stop.lock().unwrap() = true;
+                    } else {
+                        let stdin = io::stdin();
+                        let stdin_lock = stdin.lock();
+                        stdin_lock.set_canon_mode().unwrap();
+
+                        unsafe { libc::exit(0) };
+                    }
                 }
 
                 // This is a PIO write, i.e. the guest is trying to write
