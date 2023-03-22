@@ -44,7 +44,7 @@ const HIMEM_START: u64 = 0x0010_0000; // 1 MB
 /// Address where the kernel command line is written.
 const CMDLINE_START: u64 = 0x0002_0000;
 // Default command line
-pub const DEFAULT_CMDLINE: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
+pub const DEFAULT_CMDLINE: &str = "i8042.nokbd reboot=k panic=1 pci=off";
 
 fn add_e820_entry(
     params: &mut boot_params,

@@ -59,14 +59,14 @@ fn main() -> Result<(), Error> {
         opts.cpus,
         opts.memory,
         &opts.kernel,
-        opts.console,
+        opts.console.clone(),
         opts.initramfs,
         opts.net,
     )
     .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
-    vmm.run().map_err(Error::VmmRun)?;
+    vmm.run(opts.console.is_none()).map_err(Error::VmmRun)?;
 
     Ok(())
 }
