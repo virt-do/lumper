@@ -70,6 +70,14 @@ fn main() -> Result<(), Error> {
     )
     .map_err(Error::VmmConfigure)?;
 
+    // To use Writer with serial device :
+    // * Create mpsc channel :
+    // let (tx, rx) = std::sync::mpsc::channel();
+    // * Create a new Writer
+    // let writer = Writer::new(tx);
+    // * Add the Writer when configuring the VMM
+    // * Use the rx receiver to read the data
+
     // Run the VMM
     vmm.run(opts.no_console).map_err(Error::VmmRun)?;
 

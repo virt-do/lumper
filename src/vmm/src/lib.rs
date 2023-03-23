@@ -19,6 +19,7 @@ use std::{io, path::PathBuf};
 
 use devices::net::tap::Tap;
 use devices::net::VirtioNet;
+use devices::Writer;
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::{self, KernelLoaderResult};
@@ -29,7 +30,7 @@ use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
-mod devices;
+pub mod devices;
 use devices::serial::LumperSerial;
 
 mod epoll_context;
@@ -88,6 +89,8 @@ pub enum Error {
     AccessThreadHandlerError,
     /// Join thread error
     JoinThreadError(Box<dyn Any + Send>),
+    /// Writer configuration error
+    WriterError(io::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -249,6 +252,14 @@ impl VMM {
             self.vm_fd
                 .register_irqfd(&virtio_net.lock().unwrap().guest_irq_fd, 5)
                 .map_err(Error::KvmIoctl)?;
+        }
+        Ok(())
+    }
+
+    pub fn configure_writer(&mut self, writer: Option<Writer>) -> Result<()> {
+        if let Some(writer) = writer {
+            let mut serial = self.serial.lock().unwrap();
+            *serial = LumperSerial::new(Box::new(writer)).map_err(Error::WriterError)?;
         }
         Ok(())
     }
@@ -417,6 +428,9 @@ impl VMM {
             }
         }
     }
+
+        console: Option<String>,
+        no_console: bool,
 
     pub fn configure(
         &mut self,
