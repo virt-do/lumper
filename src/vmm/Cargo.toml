@@ -21,3 +21,6 @@ virtio-device = { git = "https://github.com/rust-vmm/vm-virtio" }
 virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio" }
 
 vm-superio = "0.7.0"
+
+serde_json = "1.0.94"
+serde = { version = "1.0.126", features = ["derive"] }

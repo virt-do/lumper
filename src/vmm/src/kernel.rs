@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
-
 #![cfg(target_arch = "x86_64")]
 
 use std::fs::File;
