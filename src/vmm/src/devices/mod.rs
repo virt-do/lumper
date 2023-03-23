@@ -12,10 +12,15 @@ pub struct Writer {
 
 impl Write for Writer {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let s = String::from_utf8_lossy(buf);
-        self.tx
-            .send(s.to_string())
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Error sending data"))?;
+        if buf.len() > 0 && (buf[0] != 10 && buf[0] != 13) {
+            let s = String::from_utf8_lossy(buf).to_string();
+            self.tx.send(s).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Error while sending data to channel",
+                )
+            })?;
+        }
         Ok(buf.len())
     }
 
