@@ -71,6 +71,12 @@ dependencies = [
 [[package]]
 name = "virtio-bindings"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9084faf91b9aa9676ae2cac8f1432df2839d9566e6f19f29dbc13a8b831dff"
+
+[[package]]
+name = "virtio-bindings"
+version = "0.2.0"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
 
 [[package]]
@@ -79,7 +85,7 @@ version = "0.7.1"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
 dependencies = [
  "log",
- "virtio-bindings",
+ "virtio-bindings 0.2.0 (git+https://github.com/rust-vmm/vm-virtio)",
  "vm-memory",
  "vmm-sys-util",
 ]
@@ -117,6 +123,7 @@ dependencies = [
  "kvm-ioctls",
  "libc",
  "linux-loader",
+ "virtio-bindings 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "virtio-queue",
  "vm-device",
  "vm-memory",

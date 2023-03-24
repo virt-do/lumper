@@ -1,6 +1,8 @@
 use std::{error::Error, fmt::Display};
 
+pub mod bindings;
 pub mod interface;
+pub mod tap;
 
 #[derive(Debug)]
 #[allow(dead_code)]
