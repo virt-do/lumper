@@ -25,6 +25,10 @@ struct VMMOpts {
     /// Stdout console file path
     #[clap(long)]
     console: Option<String>,
+
+    /// Interface name
+    #[clap(long)]
+    net: Option<String>,
 }
 
 #[derive(Debug)]
@@ -47,7 +51,7 @@ fn main() -> Result<(), Error> {
     // * Memory size (in MB)
     // * Path to a Linux kernel
     // * Optional path to console file
-    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console)
+    vmm.configure(opts.cpus, opts.memory, &opts.kernel, opts.console, opts.net)
         .map_err(Error::VmmConfigure)?;
 
     // Run the VMM
