@@ -29,6 +29,10 @@ struct VMMOpts {
     /// Stdout console file path
     #[clap(long)]
     console: Option<String>,
+
+    /// Interface name
+    #[clap(long)]
+    net: Option<String>,
 }
 
 #[derive(Debug)]
@@ -57,6 +61,7 @@ fn main() -> Result<(), Error> {
         &opts.kernel,
         opts.console,
         opts.initramfs,
+        opts.net,
     )
     .map_err(Error::VmmConfigure)?;
 
