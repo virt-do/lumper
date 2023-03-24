@@ -14,10 +14,16 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+use virtio_bindings::virtio_net::virtio_net_hdr_v1;
+
 pub const TUN_F_CSUM: ::std::os::raw::c_uint = 1;
 pub const TUN_F_TSO4: ::std::os::raw::c_uint = 2;
 pub const TUN_F_TSO6: ::std::os::raw::c_uint = 4;
 pub const TUN_F_UFO: ::std::os::raw::c_uint = 16;
+
+pub const VIRTIO_F_VERSION_1: u64 = 32;
+pub const VIRTIO_HDR_LEN: usize = ::core::mem::size_of::<virtio_net_hdr_v1>();
+pub const VIRTIO_NET_DEVICE_ID: u32 = 1;
 
 #[repr(C)]
 pub struct __BindgenUnionField<T>(::std::marker::PhantomData<T>);
