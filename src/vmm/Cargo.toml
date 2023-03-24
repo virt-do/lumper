@@ -16,5 +16,6 @@ vmm-sys-util = "0.11.1"
 # To make sure that breaking changes to vm-device are not breaking the
 # vm-vcpu build, we're using a fixed revision.
 vm-device = { git = "https://github.com/lucido-simon/vm-device", rev = "5619cec076594881ddf8a38978c50923b3434494" }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio" }
 
 vm-superio = "0.7.0"
