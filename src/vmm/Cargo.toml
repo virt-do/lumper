@@ -16,7 +16,8 @@ virtio-bindings = "0.2.0"
 # vm-device is not yet published on crates.io.
 # To make sure that breaking changes to vm-device are not breaking the
 # vm-vcpu build, we're using a fixed revision.
-vm-device = { git = "https://github.com/lucido-simon/vm-device", rev = "5619cec076594881ddf8a38978c50923b3434494" }
+vm-device = { git = "https://github.com/lucido-simon/vm-device", rev = "27537ff920fb6b1f8749294c911648d8e44fd5e5" }
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio" }
 virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio" }
 
 vm-superio = "0.7.0"

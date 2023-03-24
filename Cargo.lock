@@ -298,6 +298,17 @@ version = "0.2.0"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
 
 [[package]]
+name = "virtio-device"
+version = "0.1.0"
+source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
+dependencies = [
+ "log",
+ "virtio-bindings 0.2.0 (git+https://github.com/rust-vmm/vm-virtio)",
+ "virtio-queue",
+ "vm-memory",
+]
+
+[[package]]
 name = "virtio-queue"
 version = "0.7.1"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
@@ -311,7 +322,7 @@ dependencies = [
 [[package]]
 name = "vm-device"
 version = "0.1.0"
-source = "git+https://github.com/lucido-simon/vm-device?rev=5619cec076594881ddf8a38978c50923b3434494#5619cec076594881ddf8a38978c50923b3434494"
+source = "git+https://github.com/lucido-simon/vm-device?rev=27537ff920fb6b1f8749294c911648d8e44fd5e5#27537ff920fb6b1f8749294c911648d8e44fd5e5"
 dependencies = [
  "vm-memory",
 ]
@@ -342,6 +353,7 @@ dependencies = [
  "libc",
  "linux-loader",
  "virtio-bindings 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "virtio-device",
  "virtio-queue",
  "vm-device",
  "vm-memory",
