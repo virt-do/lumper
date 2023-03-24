@@ -69,6 +69,67 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro2"
+version = "1.0.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b63bdb0cd06f1f4dedf69b254734f9b45af66e4a031e42a7480257d9898b435"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4424af4bf778aae2051a77b60283332f386554255d722233d09fbfc7e30da2fc"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "syn"
+version = "2.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c9da457c5285ac1f936ebd076af6dac17a61cfe7826f2076b4d015cf47bc8ec"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978c9a314bd8dc99be594bc3c175faaa9794be04a5a5e153caba6915336cebac"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.40"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5464a87b239f13a63a501f2701565754bae92d243d4bb7eb12f6d57d2269bf4"
+
+[[package]]
+name = "virtio-bindings"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b9084faf91b9aa9676ae2cac8f1432df2839d9566e6f19f29dbc13a8b831dff"
+
+[[package]]
 name = "virtio-bindings"
 version = "0.2.0"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
@@ -79,7 +140,7 @@ version = "0.1.0"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
 dependencies = [
  "log",
- "virtio-bindings",
+ "virtio-bindings 0.2.0 (git+https://github.com/rust-vmm/vm-virtio)",
  "virtio-queue",
  "vm-memory",
 ]
@@ -90,9 +151,19 @@ version = "0.7.1"
 source = "git+https://github.com/rust-vmm/vm-virtio#467c8ec99375a5f4e08b85b18257cd7e0bac1dc0"
 dependencies = [
  "log",
- "virtio-bindings",
+ "virtio-bindings 0.2.0 (git+https://github.com/rust-vmm/vm-virtio)",
  "vm-memory",
  "vmm-sys-util",
+]
+
+[[package]]
+name = "vm-allocator"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "565b6886b7dd1b3bf34ec9243d90a97db4f2a83c2416caa52fcc95fd255d45e4"
+dependencies = [
+ "libc",
+ "thiserror",
 ]
 
 [[package]]
@@ -125,8 +196,10 @@ dependencies = [
  "kvm-ioctls",
  "libc",
  "linux-loader",
+ "virtio-bindings 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "virtio-device",
  "virtio-queue",
+ "vm-allocator",
  "vm-device",
  "vm-memory",
  "vm-superio",
