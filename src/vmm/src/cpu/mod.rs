@@ -282,7 +282,9 @@ impl Vcpu {
                         .lock()
                         .unwrap()
                         .mmio_write(GuestAddress(addr), data)
-                        .unwrap();
+                        .unwrap_or_else(|e| {
+                            // eprintln!("Failed to write to MMIO at addrress {:#x}: {}", addr, e);
+                        });
                 }
 
                 // This is a MMIO read, i.e. the guest is trying to read
@@ -292,7 +294,9 @@ impl Vcpu {
                         .lock()
                         .unwrap()
                         .mmio_read(GuestAddress(addr), data)
-                        .unwrap();
+                        .unwrap_or_else(|e| {
+                            eprintln!("Failed to read to MMIO at addrress {:#x}: {}", addr, e);
+                        });
                 }
 
                 _ => {

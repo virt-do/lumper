@@ -21,6 +21,7 @@ use devices::net::VirtioNet;
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::{self, KernelLoaderResult};
+use vm_allocator::{AddressAllocator, NodeState};
 use vm_device::device_manager::IoManager;
 use vm_device::resources::Resource;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
@@ -81,6 +82,8 @@ pub enum Error {
     VirtioNet(devices::net::VirtioNetError),
     /// Error related to IOManager.
     IoManager(vm_device::device_manager::Error),
+    /// Allocator error.
+    Allocator(vm_allocator::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -91,6 +94,7 @@ pub struct VMM {
     kvm: Kvm,
     guest_memory: GuestMemoryMmap,
     vcpus: Vec<Vcpu>,
+    memory_allocator: AddressAllocator,
 
     serial: Arc<Mutex<LumperSerial>>,
     virtio_manager: Arc<Mutex<IoManager>>,
@@ -117,6 +121,7 @@ impl VMM {
         let vmm = VMM {
             vm_fd,
             kvm,
+            memory_allocator: AddressAllocator::new(0, 0x100000000).unwrap(),
             guest_memory: GuestMemoryMmap::default(),
             vcpus: vec![],
             serial: Arc::new(Mutex::new(
@@ -132,15 +137,61 @@ impl VMM {
         Ok(vmm)
     }
 
-    pub fn configure_memory(&mut self, mem_size_mb: u32) -> Result<()> {
+    pub fn configure_allocator(&mut self, mem_size_mb: u32) -> Result<()> {
         // Convert memory size from MBytes to bytes.
-        let mem_size = ((mem_size_mb as u64) << 20) as usize;
+        let mem_size = (mem_size_mb as u64) << 20;
+        // x86_64 has a 48-bit physical address space.
+        self.memory_allocator = AddressAllocator::new(0, 1 << 47).map_err(Error::Allocator)?;
 
-        // Create one single memory region, from zero to mem_size.
-        let mem_regions = vec![(GuestAddress(0), mem_size)];
+        // Make sure that we allocated the first 1MB of memory for the low memory hole.
+        self.memory_allocator
+            .allocate(
+                0x10000,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(0),
+                vm_allocator::NodeState::ReservedAllocated,
+            )
+            .map_err(Error::Allocator)?;
+
+        self.memory_allocator
+            .allocate(
+                mem_size as u64,
+                8,
+                vm_allocator::AllocPolicy::FirstMatch,
+                NodeState::Ram,
+            )
+            .map_err(Error::Allocator)?;
+
+        Ok(())
+    }
+
+    fn register_memory(&mut self) -> Result<()> {
+        // Find all the regions that should be mapped as guest memory.
+        let mut mem_regions: Vec<_> = self
+            .memory_allocator
+            .allocated_slots()
+            .iter()
+            .filter_map(|slot| {
+                if slot.node_state() == NodeState::ReservedAllocated
+                    || slot.node_state() == NodeState::Ram
+                {
+                    let slot_key = slot.key();
+                    let (start, size) = (
+                        slot_key.start(),
+                        slot_key.end() as usize - slot_key.start() as usize + 1,
+                    );
+                    Some((GuestAddress(start), size))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        mem_regions.sort_by(|a, b| a.0.cmp(&b.0));
 
         // Allocate the guest memory from the memory region.
-        let guest_memory = GuestMemoryMmap::from_ranges(&mem_regions).map_err(Error::Memory)?;
+        let guest_memory =
+            GuestMemoryMmap::from_ranges(mem_regions.as_slice()).map_err(Error::Memory)?;
 
         // For each memory region in guest_memory:
         // 1. Create a KVM memory region mapping the memory region guest physical address to the host virtual address.
@@ -161,7 +212,6 @@ impl VMM {
         }
 
         self.guest_memory = guest_memory;
-
         Ok(())
     }
 
@@ -178,7 +228,15 @@ impl VMM {
         };
 
         // Temporary hardcoded address, see allocator PR
-        let virtio_address = GuestAddress(0xd0000000);
+        let virtio_address = self
+            .memory_allocator
+            .allocate(
+                0x1000,
+                8,
+                vm_allocator::AllocPolicy::FirstMatch,
+                NodeState::Mmio,
+            )
+            .map_err(Error::Allocator)?;
 
         let irq_fd = EventFd::new(libc::EFD_NONBLOCK).map_err(Error::IrqRegister)?;
 
@@ -202,8 +260,8 @@ impl VMM {
                 self.virtio_net.as_ref().unwrap().clone(),
                 &[
                     Resource::GuestAddressRange {
-                        base: virtio_address.raw_value(),
-                        size: 0x1000,
+                        base: virtio_address.start(),
+                        size: virtio_address.len(),
                     },
                     Resource::LegacyIrq(5),
                 ],
@@ -212,7 +270,12 @@ impl VMM {
 
         // Add the virtio-net device to the cmdline.
         self.cmdline
-            .add_virtio_mmio_device(0x1000, virtio_address, 5, None)
+            .add_virtio_mmio_device(
+                virtio_address.len(),
+                GuestAddress(virtio_address.start()),
+                5,
+                None,
+            )
             .map_err(Error::Cmdline)?;
 
         Ok(())
@@ -380,12 +443,14 @@ impl VMM {
         console: Option<String>,
         if_name: Option<String>,
     ) -> Result<()> {
+        self.configure_allocator(mem_size_mb)?;
         self.configure_console(console)?;
-        self.configure_memory(mem_size_mb)?;
 
         self.load_default_cmdline()?;
-
         self.configure_net(if_name)?;
+
+        self.register_memory()?;
+        self.configure_io()?;
 
         let kernel_load = kernel::kernel_setup(
             &self.guest_memory,
@@ -393,7 +458,6 @@ impl VMM {
             &self.cmdline,
         )?;
 
-        self.configure_io()?;
         self.configure_vcpus(num_vcpus, kernel_load)?;
 
         Ok(())

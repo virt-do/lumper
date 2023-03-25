@@ -17,6 +17,7 @@ virtio-bindings = "0.2.0"
 # To make sure that breaking changes to vm-device are not breaking the
 # vm-vcpu build, we're using a fixed revision.
 vm-device = { git = "https://github.com/lucido-simon/vm-device", rev = "27537ff920fb6b1f8749294c911648d8e44fd5e5" }
+vm-allocator = { git = "https://github.com/lucido-simon/vm-allocator", rev = "dfb880a86763a0064fdd700fbe731f26fcbf6681"}
 virtio-device = { git = "https://github.com/rust-vmm/vm-virtio" }
 virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio" }
 
