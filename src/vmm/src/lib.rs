@@ -180,14 +180,38 @@ impl VMM {
             )
             .map_err(Error::Allocator)?;
 
-        self.memory_allocator
-            .allocate(
-                mem_size as u64 - 0x10000,
-                8,
-                vm_allocator::AllocPolicy::FirstMatch,
-                NodeState::Ram,
-            )
-            .map_err(Error::Allocator)?;
+        // Allocate the rest of the memory for the guest.
+        // Fragment the memory if it doesn't fit in the low_mem -> high_mem, since the kernel is set to load in there.
+        let available_size_between_holes =
+            HIGH_MEM_HOLE_START - LOW_MEM_RESERVED_SIZE - LOW_MEM_RAM_SIZE;
+        if mem_size > available_size_between_holes {
+            self.memory_allocator
+                .allocate(
+                    available_size_between_holes,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+
+            self.memory_allocator
+                .allocate(
+                    mem_size - available_size_between_holes,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+        } else {
+            self.memory_allocator
+                .allocate(
+                    mem_size,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+        }
 
         Ok(())
     }
