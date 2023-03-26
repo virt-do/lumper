@@ -79,19 +79,25 @@ pub fn build_bootparams(
     params.hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
     params.hdr.type_of_loader = KERNEL_LOADER_OTHER;
 
-    allocator.allocated_slots().iter().for_each(|slot| {
-        if slot.node_state() == vm_allocator::NodeState::Ram {
-            add_e820_entry(&mut params, slot.key().start(), slot.key().len(), E820_RAM).unwrap();
-        } else if slot.node_state() == vm_allocator::NodeState::ReservedAllocated {
-            add_e820_entry(
-                &mut params,
-                slot.key().start(),
-                slot.key().len(),
-                E820_RESERVED,
-            )
-            .unwrap();
-        }
-    });
+    allocator
+        .allocated_slots()
+        .iter()
+        .for_each(|slot| match slot.node_state() {
+            vm_allocator::NodeState::Ram => {
+                add_e820_entry(&mut params, slot.key().start(), slot.key().len(), E820_RAM)
+                    .unwrap();
+            }
+            vm_allocator::NodeState::ReservedAllocated => {
+                add_e820_entry(
+                    &mut params,
+                    slot.key().start(),
+                    slot.key().len(),
+                    E820_RESERVED,
+                )
+                .unwrap();
+            }
+            _ => {}
+        });
 
     Ok(params)
 }

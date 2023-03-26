@@ -128,7 +128,8 @@ impl VMM {
         let vmm = VMM {
             vm_fd,
             kvm,
-            memory_allocator: AddressAllocator::new(0, 0x100000000).unwrap(),
+            // x86_64 has a 48-bit physical address space.
+            memory_allocator: AddressAllocator::new(0, 1 << 47).map_err(Error::Allocator)?,
             guest_memory: GuestMemoryMmap::default(),
             vcpus: vec![],
             serial: Arc::new(Mutex::new(
@@ -147,8 +148,6 @@ impl VMM {
     pub fn configure_allocator(&mut self, mem_size_mb: u32) -> Result<()> {
         // Convert memory size from MBytes to bytes.
         let mem_size = (mem_size_mb as u64) << 20;
-        // x86_64 has a 48-bit physical address space.
-        self.memory_allocator = AddressAllocator::new(0, 1 << 47).map_err(Error::Allocator)?;
 
         // https://wiki.osdev.org/Memory_Map_(x86)
         // Make sure that we allocated the first 1MB of memory for the low memory hole.
@@ -222,19 +221,16 @@ impl VMM {
             .memory_allocator
             .allocated_slots()
             .iter()
-            .filter_map(|slot| {
-                if slot.node_state() == NodeState::ReservedAllocated
-                    || slot.node_state() == NodeState::Ram
-                {
+            .filter_map(|slot| match slot.node_state() {
+                NodeState::ReservedAllocated | NodeState::Ram => {
                     let slot_key = slot.key();
                     let (start, size) = (
                         slot_key.start(),
                         slot_key.end() as usize - slot_key.start() as usize + 1,
                     );
                     Some((GuestAddress(start), size))
-                } else {
-                    None
                 }
+                _ => None,
             })
             .collect();
 
