@@ -168,7 +168,7 @@ dependencies = [
 [[package]]
 name = "vm-device"
 version = "0.1.0"
-source = "git+https://github.com/lucido-simon/vm-device?rev=27537ff920fb6b1f8749294c911648d8e44fd5e5#27537ff920fb6b1f8749294c911648d8e44fd5e5"
+source = "git+https://github.com/lucido-simon/vm-device?rev=63bf6ecea4ee851d500e283dc3809baf6f89555d#63bf6ecea4ee851d500e283dc3809baf6f89555d"
 dependencies = [
  "vm-memory",
 ]

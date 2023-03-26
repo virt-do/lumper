@@ -38,6 +38,13 @@ mod kernel;
 
 const CMDLINE_MAX_SIZE: usize = 4096;
 
+// Real mode address space constants: https://wiki.osdev.org/Memory_Map_(x86)#Overview
+const LOW_MEM_RAM_SIZE: u64 = 0x000a_0000;
+const LOW_MEM_RESERVED_SIZE: u64 = 0x0006_0000;
+
+const HIGH_MEM_HOLE_START: u64 = (1 << 32) - HIGH_MEM_HOLE_SIZE;
+const HIGH_MEM_HOLE_SIZE: u64 = 0x1400000;
+
 #[derive(Debug)]
 
 /// VMM errors.
@@ -143,19 +150,39 @@ impl VMM {
         // x86_64 has a 48-bit physical address space.
         self.memory_allocator = AddressAllocator::new(0, 1 << 47).map_err(Error::Allocator)?;
 
+        // https://wiki.osdev.org/Memory_Map_(x86)
         // Make sure that we allocated the first 1MB of memory for the low memory hole.
         self.memory_allocator
             .allocate(
-                0x10000,
+                LOW_MEM_RAM_SIZE,
                 8,
                 vm_allocator::AllocPolicy::ExactMatch(0),
+                vm_allocator::NodeState::Ram,
+            )
+            .map_err(Error::Allocator)?;
+        self.memory_allocator
+            .allocate(
+                LOW_MEM_RESERVED_SIZE,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(LOW_MEM_RAM_SIZE),
                 vm_allocator::NodeState::ReservedAllocated,
+            )
+            .map_err(Error::Allocator)?;
+
+        // Reserve the end of the 4GB address space for the high memory hole. (intel specific)
+        // https://resources.infosecinstitute.com/wp-content/uploads/010814_1515_SystemAddre14.png
+        self.memory_allocator
+            .allocate(
+                HIGH_MEM_HOLE_SIZE,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(HIGH_MEM_HOLE_START),
+                vm_allocator::NodeState::ReservedUnallocated,
             )
             .map_err(Error::Allocator)?;
 
         self.memory_allocator
             .allocate(
-                mem_size as u64,
+                mem_size as u64 - 0x10000,
                 8,
                 vm_allocator::AllocPolicy::FirstMatch,
                 NodeState::Ram,
@@ -227,7 +254,6 @@ impl VMM {
             None => return Ok(()),
         };
 
-        // Temporary hardcoded address, see allocator PR
         let virtio_address = self
             .memory_allocator
             .allocate(
@@ -456,6 +482,7 @@ impl VMM {
             &self.guest_memory,
             PathBuf::from(kernel_path),
             &self.cmdline,
+            &self.memory_allocator,
         )?;
 
         self.configure_vcpus(num_vcpus, kernel_load)?;

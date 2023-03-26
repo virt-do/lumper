@@ -283,7 +283,7 @@ impl Vcpu {
                         .unwrap()
                         .mmio_write(GuestAddress(addr), data)
                         .unwrap_or_else(|e| {
-                            // eprintln!("Failed to write to MMIO at addrress {:#x}: {}", addr, e);
+                            eprintln!("Failed to write to MMIO at addrress {:#x}: {}", addr, e);
                         });
                 }
 

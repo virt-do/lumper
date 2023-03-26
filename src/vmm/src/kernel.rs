@@ -10,7 +10,7 @@ use linux_loader::bootparam::boot_params;
 use linux_loader::cmdline::Cmdline;
 use linux_loader::configurator::{linux::LinuxBootConfigurator, BootConfigurator, BootParams};
 use linux_loader::loader::{elf::Elf, load_cmdline, KernelLoader, KernelLoaderResult};
-use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
+use vm_memory::{GuestAddress, GuestMemoryMmap};
 
 use crate::{Error, Result};
 
@@ -27,14 +27,11 @@ const KERNEL_LOADER_OTHER: u8 = 0xff;
 // Header field: `kernel_alignment`. Alignment unit required by a relocatable kernel.
 const KERNEL_MIN_ALIGNMENT_BYTES: u32 = 0x0100_0000;
 
-// Start address for the EBDA (Extended Bios Data Area). Older computers (like the one this VMM
-// emulates) typically use 1 KiB for the EBDA, starting at 0x9fc00.
-// See https://wiki.osdev.org/Memory_Map_(x86) for more information.
-const EBDA_START: u64 = 0x0009_fc00;
 // RAM memory type.
 // TODO: this should be bindgen'ed and exported by linux-loader.
 // See https://github.com/rust-vmm/linux-loader/issues/51
 const E820_RAM: u32 = 1;
+const E820_RESERVED: u32 = 2;
 
 /// Address of the zeropage, where Linux kernel boot parameters are written.
 pub(crate) const ZEROPG_START: u64 = 0x7000;
@@ -73,8 +70,7 @@ fn add_e820_entry(
 /// * `mmio_gap_start` - address where the MMIO gap starts.
 /// * `mmio_gap_end` - address where the MMIO gap ends.
 pub fn build_bootparams(
-    guest_memory: &GuestMemoryMmap,
-    himem_start: GuestAddress,
+    allocator: &vm_allocator::AddressAllocator,
 ) -> std::result::Result<boot_params, Error> {
     let mut params = boot_params::default();
 
@@ -83,19 +79,19 @@ pub fn build_bootparams(
     params.hdr.kernel_alignment = KERNEL_MIN_ALIGNMENT_BYTES;
     params.hdr.type_of_loader = KERNEL_LOADER_OTHER;
 
-    // Add an entry for EBDA itself.
-    add_e820_entry(&mut params, 0, EBDA_START, E820_RAM)?;
-
-    // Add entries for the usable RAM regions.
-    let last_addr = guest_memory.last_addr();
-    add_e820_entry(
-        &mut params,
-        himem_start.raw_value() as u64,
-        last_addr
-            .checked_offset_from(himem_start)
-            .ok_or(Error::HimemStartPastMemEnd)?,
-        E820_RAM,
-    )?;
+    allocator.allocated_slots().iter().for_each(|slot| {
+        if slot.node_state() == vm_allocator::NodeState::Ram {
+            add_e820_entry(&mut params, slot.key().start(), slot.key().len(), E820_RAM).unwrap();
+        } else if slot.node_state() == vm_allocator::NodeState::ReservedAllocated {
+            add_e820_entry(
+                &mut params,
+                slot.key().start(),
+                slot.key().len(),
+                E820_RESERVED,
+            )
+            .unwrap();
+        }
+    });
 
     Ok(params)
 }
@@ -110,6 +106,7 @@ pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel_path: PathBuf,
     cmdline: &Cmdline,
+    allocator: &vm_allocator::AddressAllocator,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
@@ -124,7 +121,7 @@ pub fn kernel_setup(
     .map_err(Error::KernelLoad)?;
 
     // Generate boot parameters.
-    let mut bootparams = build_bootparams(guest_memory, GuestAddress(HIMEM_START))?;
+    let mut bootparams = build_bootparams(allocator)?;
 
     let cmdline_str = cmdline
         .as_cstring()
