@@ -30,6 +30,11 @@ mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 mod kernel;
 
+/// avoid the memory space where the APIC and MSI interrupts are located
+const HIGH_RESERVED_MEMORY_END: usize = 1 << 32;
+const HIGH_RESERVED_MEMORY_SIZE: usize = 0x1400000;
+const HIGH_RESERVED_MEMORY_START: usize = HIGH_RESERVED_MEMORY_END - HIGH_RESERVED_MEMORY_SIZE;
+
 #[derive(Debug)]
 
 /// VMM errors.
@@ -112,8 +117,17 @@ impl VMM {
         // Convert memory size from MBytes to bytes.
         let mem_size = ((mem_size_mb as u64) << 20) as usize;
 
-        // Create one single memory region, from zero to mem_size.
-        let mem_regions = vec![(GuestAddress(0), mem_size)];
+        // Check if the memory is overlapping with the APIC memory region.
+        // If it is, split the memory into two regions.
+
+        let mem_regions = if mem_size < HIGH_RESERVED_MEMORY_START {
+            vec![(GuestAddress(0), mem_size)]
+        } else {
+            vec![
+                (GuestAddress(0), HIGH_RESERVED_MEMORY_START),
+                (GuestAddress(HIGH_RESERVED_MEMORY_END as u64), mem_size - HIGH_RESERVED_MEMORY_END),
+            ]
+        };
 
         // Allocate the guest memory from the memory region.
         let guest_memory = GuestMemoryMmap::from_ranges(&mem_regions).map_err(Error::Memory)?;
@@ -269,7 +283,12 @@ impl VMM {
     pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
         self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
+        let kernel_load = kernel::kernel_setup(
+            &self.guest_memory,
+            PathBuf::from(kernel_path),
+            GuestAddress(HIGH_RESERVED_MEMORY_START as u64),
+            GuestAddress(HIGH_RESERVED_MEMORY_END as u64),
+        )?;
         self.configure_io()?;
         self.configure_vcpus(num_vcpus, kernel_load)?;
 

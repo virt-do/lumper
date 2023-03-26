@@ -75,6 +75,8 @@ fn add_e820_entry(
 pub fn build_bootparams(
     guest_memory: &GuestMemoryMmap,
     himem_start: GuestAddress,
+    reserved_memory_start: GuestAddress,
+    reserved_memory_end: GuestAddress,
 ) -> std::result::Result<boot_params, Error> {
     let mut params = boot_params::default();
 
@@ -88,14 +90,35 @@ pub fn build_bootparams(
 
     // Add entries for the usable RAM regions.
     let last_addr = guest_memory.last_addr();
-    add_e820_entry(
-        &mut params,
-        himem_start.raw_value() as u64,
-        last_addr
-            .checked_offset_from(himem_start)
-            .ok_or(Error::HimemStartPastMemEnd)?,
-        E820_RAM,
-    )?;
+
+    if reserved_memory_start > last_addr {
+        add_e820_entry(
+            &mut params,
+            himem_start.raw_value() as u64,
+            last_addr
+                .checked_offset_from(himem_start)
+                .ok_or(Error::HimemStartPastMemEnd)?,
+            E820_RAM,
+        )?;
+    } else {
+        add_e820_entry(
+            &mut params,
+            himem_start.raw_value() as u64,
+            reserved_memory_start
+                .checked_offset_from(himem_start)
+                .ok_or(Error::HimemStartPastMemEnd)?,
+            E820_RAM,
+        )?;
+
+        add_e820_entry(
+            &mut params,
+            reserved_memory_end.raw_value() as u64,
+            last_addr
+                .checked_offset_from(reserved_memory_end)
+                .ok_or(Error::HimemStartPastMemEnd)?,
+            E820_RAM,
+        )?;
+    }
 
     Ok(params)
 }
@@ -109,6 +132,8 @@ pub fn build_bootparams(
 pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel_path: PathBuf,
+    reserved_memory_start: GuestAddress,
+    reserved_memory_end: GuestAddress,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
@@ -123,7 +148,12 @@ pub fn kernel_setup(
     .map_err(Error::KernelLoad)?;
 
     // Generate boot parameters.
-    let mut bootparams = build_bootparams(guest_memory, GuestAddress(HIMEM_START))?;
+    let mut bootparams = build_bootparams(
+        guest_memory,
+        GuestAddress(HIMEM_START),
+        reserved_memory_start,
+        reserved_memory_end,
+    )?;
 
     // Add the kernel command line to the boot parameters.
     bootparams.hdr.cmd_line_ptr = CMDLINE_START as u32;
