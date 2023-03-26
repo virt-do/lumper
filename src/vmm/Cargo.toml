@@ -11,10 +11,14 @@ libc = "0.2.91"
 linux-loader = { version = "0.8.1", features = ["bzimage", "elf"] }
 vm-memory = { version = "0.10.0", features = ["backend-mmap"] }
 vmm-sys-util = "0.11.1"
+virtio-bindings = "0.2.0"
 
 # vm-device is not yet published on crates.io.
 # To make sure that breaking changes to vm-device are not breaking the
 # vm-vcpu build, we're using a fixed revision.
-vm-device = { git = "https://github.com/rust-vmm/vm-device", rev = "5847f12" }
+vm-device = { git = "https://github.com/lucido-simon/vm-device", rev = "63bf6ecea4ee851d500e283dc3809baf6f89555d" }
+vm-allocator = { git = "https://github.com/lucido-simon/vm-allocator", rev = "dfb880a86763a0064fdd700fbe731f26fcbf6681"}
+virtio-device = { git = "https://github.com/rust-vmm/vm-virtio" }
+virtio-queue = { git = "https://github.com/rust-vmm/vm-virtio" }
 
 vm-superio = "0.7.0"

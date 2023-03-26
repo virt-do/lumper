@@ -8,18 +8,24 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
-use std::fs::File;
 
+use devices::net::tap::Tap;
+use devices::net::VirtioNet;
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
 use linux_loader::loader::{self, KernelLoaderResult};
+use vm_allocator::{AddressAllocator, NodeState};
+use vm_device::device_manager::IoManager;
+use vm_device::resources::Resource;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
+use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
@@ -29,6 +35,15 @@ use devices::serial::LumperSerial;
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 mod kernel;
+
+const CMDLINE_MAX_SIZE: usize = 4096;
+
+// Real mode address space constants: https://wiki.osdev.org/Memory_Map_(x86)#Overview
+const LOW_MEM_RAM_SIZE: u64 = 0x000a_0000;
+const LOW_MEM_RESERVED_SIZE: u64 = 0x0006_0000;
+
+const HIGH_MEM_HOLE_START: u64 = (1 << 32) - HIGH_MEM_HOLE_SIZE;
+const HIGH_MEM_HOLE_SIZE: u64 = 0x1400000;
 
 #[derive(Debug)]
 
@@ -66,6 +81,16 @@ pub enum Error {
     TerminalConfigure(kvm_ioctls::Error),
     /// Console configuration error
     ConsoleError(io::Error),
+    /// IntoString error
+    IntoStringError(std::ffi::IntoStringError),
+    /// Error writing to the guest memory.
+    GuestMemory(vm_memory::guest_memory::Error),
+    /// Error related to the virtio-net device.
+    VirtioNet(devices::net::VirtioNetError),
+    /// Error related to IOManager.
+    IoManager(vm_device::device_manager::Error),
+    /// Allocator error.
+    Allocator(vm_allocator::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -76,9 +101,15 @@ pub struct VMM {
     kvm: Kvm,
     guest_memory: GuestMemoryMmap,
     vcpus: Vec<Vcpu>,
+    memory_allocator: AddressAllocator,
 
     serial: Arc<Mutex<LumperSerial>>,
+    virtio_manager: Arc<Mutex<IoManager>>,
+    virtio_net: Option<Arc<Mutex<VirtioNet<Arc<GuestMemoryMmap>, Tap>>>>,
+
     epoll: EpollContext,
+
+    cmdline: linux_loader::cmdline::Cmdline,
 }
 
 impl VMM {
@@ -97,26 +128,117 @@ impl VMM {
         let vmm = VMM {
             vm_fd,
             kvm,
+            // x86_64 has a 48-bit physical address space.
+            memory_allocator: AddressAllocator::new(0, 1 << 47).map_err(Error::Allocator)?,
             guest_memory: GuestMemoryMmap::default(),
             vcpus: vec![],
             serial: Arc::new(Mutex::new(
                 LumperSerial::new(Box::new(stdout())).map_err(Error::SerialCreation)?,
             )),
+            virtio_net: None,
+            virtio_manager: Arc::new(Mutex::new(IoManager::new())),
             epoll,
+            cmdline: linux_loader::cmdline::Cmdline::new(CMDLINE_MAX_SIZE)
+                .map_err(Error::Cmdline)?,
         };
 
         Ok(vmm)
     }
 
-    pub fn configure_memory(&mut self, mem_size_mb: u32) -> Result<()> {
+    pub fn configure_allocator(&mut self, mem_size_mb: u32) -> Result<()> {
         // Convert memory size from MBytes to bytes.
-        let mem_size = ((mem_size_mb as u64) << 20) as usize;
+        let mem_size = (mem_size_mb as u64) << 20;
 
-        // Create one single memory region, from zero to mem_size.
-        let mem_regions = vec![(GuestAddress(0), mem_size)];
+        // https://wiki.osdev.org/Memory_Map_(x86)
+        // Make sure that we allocated the first 1MB of memory for the low memory hole.
+        self.memory_allocator
+            .allocate(
+                LOW_MEM_RAM_SIZE,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(0),
+                vm_allocator::NodeState::Ram,
+            )
+            .map_err(Error::Allocator)?;
+        self.memory_allocator
+            .allocate(
+                LOW_MEM_RESERVED_SIZE,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(LOW_MEM_RAM_SIZE),
+                vm_allocator::NodeState::ReservedAllocated,
+            )
+            .map_err(Error::Allocator)?;
+
+        // Reserve the end of the 4GB address space for the high memory hole. (intel specific)
+        // https://resources.infosecinstitute.com/wp-content/uploads/010814_1515_SystemAddre14.png
+        self.memory_allocator
+            .allocate(
+                HIGH_MEM_HOLE_SIZE,
+                8,
+                vm_allocator::AllocPolicy::ExactMatch(HIGH_MEM_HOLE_START),
+                vm_allocator::NodeState::ReservedUnallocated,
+            )
+            .map_err(Error::Allocator)?;
+
+        // Allocate the rest of the memory for the guest.
+        // Fragment the memory if it doesn't fit in the low_mem -> high_mem, since the kernel is set to load in there.
+        let available_size_between_holes =
+            HIGH_MEM_HOLE_START - LOW_MEM_RESERVED_SIZE - LOW_MEM_RAM_SIZE;
+        if mem_size > available_size_between_holes {
+            self.memory_allocator
+                .allocate(
+                    available_size_between_holes,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+
+            self.memory_allocator
+                .allocate(
+                    mem_size - available_size_between_holes,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+        } else {
+            self.memory_allocator
+                .allocate(
+                    mem_size,
+                    8,
+                    vm_allocator::AllocPolicy::FirstMatch,
+                    NodeState::Ram,
+                )
+                .map_err(Error::Allocator)?;
+        }
+
+        Ok(())
+    }
+
+    fn register_memory(&mut self) -> Result<()> {
+        // Find all the regions that should be mapped as guest memory.
+        let mut mem_regions: Vec<_> = self
+            .memory_allocator
+            .allocated_slots()
+            .iter()
+            .filter_map(|slot| match slot.node_state() {
+                NodeState::ReservedAllocated | NodeState::Ram => {
+                    let slot_key = slot.key();
+                    let (start, size) = (
+                        slot_key.start(),
+                        slot_key.end() as usize - slot_key.start() as usize + 1,
+                    );
+                    Some((GuestAddress(start), size))
+                }
+                _ => None,
+            })
+            .collect();
+
+        mem_regions.sort_by(|a, b| a.0.cmp(&b.0));
 
         // Allocate the guest memory from the memory region.
-        let guest_memory = GuestMemoryMmap::from_ranges(&mem_regions).map_err(Error::Memory)?;
+        let guest_memory =
+            GuestMemoryMmap::from_ranges(mem_regions.as_slice()).map_err(Error::Memory)?;
 
         // For each memory region in guest_memory:
         // 1. Create a KVM memory region mapping the memory region guest physical address to the host virtual address.
@@ -137,6 +259,70 @@ impl VMM {
         }
 
         self.guest_memory = guest_memory;
+        Ok(())
+    }
+
+    pub fn load_default_cmdline(&mut self) -> Result<()> {
+        self.cmdline
+            .insert_str(kernel::DEFAULT_CMDLINE)
+            .map_err(Error::Cmdline)
+    }
+    // configure the virtio-net device
+    pub fn configure_net(&mut self, interface: Option<String>) -> Result<()> {
+        let if_name = match interface {
+            Some(if_name) => if_name,
+            None => return Ok(()),
+        };
+
+        let virtio_address = self
+            .memory_allocator
+            .allocate(
+                0x1000,
+                8,
+                vm_allocator::AllocPolicy::FirstMatch,
+                NodeState::Mmio,
+            )
+            .map_err(Error::Allocator)?;
+
+        let irq_fd = EventFd::new(libc::EFD_NONBLOCK).map_err(Error::IrqRegister)?;
+
+        let virtio_net = VirtioNet::new(
+            Arc::new(self.guest_memory.clone()),
+            irq_fd,
+            if_name.as_str(),
+        )
+        .map_err(Error::VirtioNet)?;
+
+        self.epoll
+            .add_fd(virtio_net.as_raw_fd())
+            .map_err(Error::EpollError)?;
+        let mut io_manager = self.virtio_manager.lock().unwrap();
+
+        self.virtio_net = Some(Arc::new(Mutex::new(virtio_net)));
+
+        io_manager
+            .register_mmio_resources(
+                // It's safe to unwrap because the virtio-net was just assigned
+                self.virtio_net.as_ref().unwrap().clone(),
+                &[
+                    Resource::GuestAddressRange {
+                        base: virtio_address.start(),
+                        size: virtio_address.len(),
+                    },
+                    Resource::LegacyIrq(5),
+                ],
+            )
+            .map_err(Error::IoManager)?;
+
+        // Add the virtio-net device to the cmdline.
+        self.cmdline
+            .add_virtio_mmio_device(
+                virtio_address.len(),
+                GuestAddress(virtio_address.start()),
+                5,
+                None,
+            )
+            .map_err(Error::Cmdline)?;
 
         Ok(())
     }
@@ -161,13 +347,15 @@ impl VMM {
             )
             .map_err(Error::KvmIoctl)?;
 
+        if let Some(virtio_net) = self.virtio_net.as_ref() {
+            self.vm_fd
+                .register_irqfd(&virtio_net.lock().unwrap().guest_irq_fd, 5)
+                .map_err(Error::KvmIoctl)?;
+        }
         Ok(())
     }
 
-    pub fn configure_console(
-        &mut self,
-        console_path: Option<String>
-    ) -> Result<()> {
+    pub fn configure_console(&mut self, console_path: Option<String>) -> Result<()> {
         if let Some(console_path) = console_path {
             // We create the file if it does not exist, else we open
             let file = File::create(&console_path).map_err(Error::ConsoleError)?;
@@ -193,8 +381,13 @@ impl VMM {
             .map_err(Error::KvmIoctl)?;
 
         for index in 0..num_vcpus {
-            let vcpu = Vcpu::new(&self.vm_fd, index.into(), Arc::clone(&self.serial))
-                .map_err(Error::Vcpu)?;
+            let vcpu = Vcpu::new(
+                &self.vm_fd,
+                index.into(),
+                Arc::clone(&self.serial),
+                self.virtio_manager.clone(),
+            )
+            .map_err(Error::Vcpu)?;
 
             // Set CPUID.
             let mut vcpu_cpuid = base_cpuid.clone();
@@ -241,11 +434,22 @@ impl VMM {
             .map_err(Error::TerminalConfigure)?;
         let mut events = vec![epoll::Event::new(epoll::Events::empty(), 0); EPOLL_EVENTS_LEN];
         let epoll_fd = self.epoll.as_raw_fd();
-
-        // Let's start the STDIN polling thread.
+        let interface_fd = match self.virtio_net.as_ref() {
+            Some(virtio_net) => Some(virtio_net.lock().unwrap().interface.as_raw_fd()),
+            None => None,
+        };
+        // Let's start the STDIN/Network interface polling thread.
         loop {
-            let num_events =
-                epoll::wait(epoll_fd, -1, &mut events[..]).map_err(Error::EpollError)?;
+            let num_events = match epoll::wait(epoll_fd, -1, &mut events[..]) {
+                Ok(num_events) => num_events,
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::Interrupted {
+                        continue;
+                    } else {
+                        return Err(Error::EpollError(e));
+                    }
+                }
+            };
 
             for event in events.iter().take(num_events) {
                 let event_data = event.data as RawFd;
@@ -262,15 +466,45 @@ impl VMM {
                         .enqueue_raw_bytes(&out[..count])
                         .map_err(Error::StdinWrite)?;
                 }
+
+                if interface_fd == Some(event_data) {
+                    self.virtio_net
+                        .as_ref()
+                        // Safe because we checked that the virtio_net is Some before the loop.
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .process_tap()
+                        .map_err(Error::VirtioNet)?;
+                }
             }
         }
     }
 
-    pub fn configure(&mut self, num_vcpus: u8, mem_size_mb: u32, kernel_path: &str, console: Option<String>) -> Result<()> {
+    pub fn configure(
+        &mut self,
+        num_vcpus: u8,
+        mem_size_mb: u32,
+        kernel_path: &str,
+        console: Option<String>,
+        if_name: Option<String>,
+    ) -> Result<()> {
+        self.configure_allocator(mem_size_mb)?;
         self.configure_console(console)?;
-        self.configure_memory(mem_size_mb)?;
-        let kernel_load = kernel::kernel_setup(&self.guest_memory, PathBuf::from(kernel_path))?;
+
+        self.load_default_cmdline()?;
+        self.configure_net(if_name)?;
+
+        self.register_memory()?;
         self.configure_io()?;
+
+        let kernel_load = kernel::kernel_setup(
+            &self.guest_memory,
+            PathBuf::from(kernel_path),
+            &self.cmdline,
+            &self.memory_allocator,
+        )?;
+
         self.configure_vcpus(num_vcpus, kernel_load)?;
 
         Ok(())
