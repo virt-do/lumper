@@ -44,7 +44,7 @@ const HIMEM_START: u64 = 0x0010_0000; // 1 MB
 /// Address where the kernel command line is written.
 const CMDLINE_START: u64 = 0x0002_0000;
 // Default command line
-const CMDLINE: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
+pub const DEFAULT_CMDLINE: &str = "console=ttyS0 i8042.nokbd reboot=k panic=1 pci=off";
 
 fn add_e820_entry(
     params: &mut boot_params,
@@ -110,6 +110,7 @@ pub fn kernel_setup(
     guest_memory: &GuestMemoryMmap,
     kernel_path: PathBuf,
     initramfs_path: Option<String>,
+    cmdline: &Cmdline,
 ) -> Result<KernelLoaderResult> {
     let mut kernel_image = File::open(kernel_path).map_err(Error::IO)?;
     let zero_page_addr = GuestAddress(ZEROPG_START);
@@ -126,9 +127,25 @@ pub fn kernel_setup(
     // Generate boot parameters.
     let mut bootparams = build_bootparams(guest_memory, GuestAddress(HIMEM_START))?;
 
+    let cmdline_str = cmdline
+        .as_cstring()
+        .map_err(Error::Cmdline)?
+        .into_string()
+        .map_err(Error::IntoStringError)?;
+
+    let cmdline_size = cmdline_str.len() as u32;
+
     // Add the kernel command line to the boot parameters.
     bootparams.hdr.cmd_line_ptr = CMDLINE_START as u32;
-    bootparams.hdr.cmdline_size = CMDLINE.len() as u32 + 1;
+    bootparams.hdr.cmdline_size = cmdline_size + 1;
+
+    // Shrink the command line to the actual size.
+
+    let mut shrinked_cmdline =
+        linux_loader::cmdline::Cmdline::new(cmdline_size as usize + 1).map_err(Error::Cmdline)?;
+    shrinked_cmdline
+        .insert_str(&cmdline_str)
+        .map_err(Error::Cmdline)?;
 
     // Add the initramfs to the boot parameters if one was provided.
     if let Some(initramfs_path) = initramfs_path {
@@ -155,14 +172,11 @@ pub fn kernel_setup(
     }
 
     // Load the kernel command line into guest memory.
-    let mut cmdline = Cmdline::new(CMDLINE.len() + 1).map_err(Error::Cmdline)?;
-
-    cmdline.insert_str(CMDLINE).map_err(Error::Cmdline)?;
     load_cmdline(
         guest_memory,
         GuestAddress(CMDLINE_START),
         // Safe because the command line is valid.
-        &cmdline,
+        cmdline,
     )
     .map_err(Error::KernelLoad)?;
 

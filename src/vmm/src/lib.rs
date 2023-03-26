@@ -8,13 +8,13 @@ extern crate linux_loader;
 extern crate vm_memory;
 extern crate vm_superio;
 
+use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
-use std::fs::File;
 
 use kvm_bindings::{kvm_userspace_memory_region, KVM_MAX_CPUID_ENTRIES};
 use kvm_ioctls::{Kvm, VmFd};
@@ -30,6 +30,8 @@ use devices::serial::LumperSerial;
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
 mod kernel;
+
+const CMDLINE_MAX_SIZE: usize = 4096;
 
 #[derive(Debug)]
 
@@ -69,6 +71,8 @@ pub enum Error {
     TerminalConfigure(kvm_ioctls::Error),
     /// Console configuration error
     ConsoleError(io::Error),
+    /// IntoString error
+    IntoStringError(std::ffi::IntoStringError),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
@@ -83,6 +87,8 @@ pub struct VMM {
     serial: Arc<Mutex<LumperSerial>>,
     virtio_manager: Arc<Mutex<IoManager>>,
     epoll: EpollContext,
+
+    cmdline: linux_loader::cmdline::Cmdline,
 }
 
 impl VMM {
@@ -108,6 +114,8 @@ impl VMM {
             )),
             virtio_manager: Arc::new(Mutex::new(IoManager::new())),
             epoll,
+            cmdline: linux_loader::cmdline::Cmdline::new(CMDLINE_MAX_SIZE)
+                .map_err(Error::Cmdline)?,
         };
 
         Ok(vmm)
@@ -144,6 +152,12 @@ impl VMM {
         self.guest_memory = guest_memory;
 
         Ok(())
+    }
+
+    pub fn load_default_cmdline(&mut self) -> Result<()> {
+        self.cmdline
+            .insert_str(kernel::DEFAULT_CMDLINE)
+            .map_err(Error::Cmdline)
     }
 
     pub fn configure_io(&mut self) -> Result<()> {
@@ -286,10 +300,12 @@ impl VMM {
     ) -> Result<()> {
         self.configure_console(console)?;
         self.configure_memory(mem_size_mb)?;
+        self.load_default_cmdline()?;
         let kernel_load = kernel::kernel_setup(
             &self.guest_memory,
             PathBuf::from(kernel_path),
             initramfs_path,
+            &self.cmdline,
         )?;
         self.configure_io()?;
         self.configure_vcpus(num_vcpus, kernel_load)?;
