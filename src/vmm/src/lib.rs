@@ -493,9 +493,10 @@ impl VMM {
         self.configure_console(console)?;
 
         self.load_default_cmdline()?;
-        self.configure_net(if_name)?;
-
+        
         self.register_memory()?;
+        
+        self.configure_net(if_name)?;
         self.configure_io()?;
 
         let kernel_load = kernel::kernel_setup(
