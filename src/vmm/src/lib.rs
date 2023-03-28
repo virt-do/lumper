@@ -25,6 +25,7 @@ mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
 mod devices;
 use devices::serial::LumperSerial;
+use vm_allocator::IdAllocator;
 
 mod epoll_context;
 use epoll_context::{EpollContext, EPOLL_EVENTS_LEN};
@@ -68,10 +69,20 @@ pub enum Error {
     TerminalConfigure(kvm_ioctls::Error),
     /// Console configuration error
     ConsoleError(io::Error),
+    /// Allocator error
+    Allocator(vm_allocator::Error),
 }
 
 /// Dedicated [`Result`](https://doc.rust-lang.org/std/result/) type.
 pub type Result<T> = std::result::Result<T, Error>;
+
+
+/// Maximum usable IRQ https://www.kernel.org/doc/html/latest/virt/kvm/api.html#kvm-create-irqchip
+const IOAPIC_MAX_IRQ : u32 = 23;
+/// IRQ for the serial port
+const SERIAL1_IRQ: u32 = 4;
+/// minimal IRQ for the virtio devices
+const X86_IRQ_BASE: u32 = SERIAL1_IRQ + 1;
 
 pub struct VMM {
     vm_fd: VmFd,
@@ -81,6 +92,7 @@ pub struct VMM {
 
     serial: Arc<Mutex<LumperSerial>>,
     epoll: EpollContext,
+    irq_allocator: IdAllocator,
 }
 
 impl VMM {
@@ -105,6 +117,7 @@ impl VMM {
                 LumperSerial::new(Box::new(stdout())).map_err(Error::SerialCreation)?,
             )),
             epoll,
+            irq_allocator: IdAllocator::new(X86_IRQ_BASE, IOAPIC_MAX_IRQ).map_err(Error::Allocator)?,
         };
 
         Ok(vmm)
@@ -159,7 +172,7 @@ impl VMM {
                     .unwrap()
                     .eventfd()
                     .map_err(Error::IrqRegister)?,
-                4,
+                SERIAL1_IRQ,
             )
             .map_err(Error::KvmIoctl)?;
 
