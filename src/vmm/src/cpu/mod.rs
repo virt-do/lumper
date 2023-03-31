@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
 use std::convert::TryInto;
-use std::io;
+use std::io::Write;
+use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
 use std::{result, u64};
 
@@ -11,7 +12,6 @@ use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
 use vm_device::bus::MmioAddress;
 use vm_device::device_manager::{IoManager, MmioManager};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryError, GuestMemoryMmap};
-use vmm_sys_util::terminal::Terminal;
 
 use crate::devices::serial::{LumperSerial, SERIAL_PORT_BASE, SERIAL_PORT_LAST_REGISTER};
 
@@ -224,89 +224,85 @@ impl Vcpu {
     }
 
     /// vCPU emulation loop.
-    pub fn run(&mut self, no_console: bool, should_stop: Arc<Mutex<bool>>) {
+    pub fn run(&mut self, socket_name: String) {
+        let mut unix_socket = UnixStream::connect(socket_name).unwrap();
         // Call into KVM to launch (VMLAUNCH) or resume (VMRESUME) the virtual CPU.
         // This is a blocking function, it only returns for either an error or a
         // VM-Exit. In the latter case, we can inspect the exit reason.
-        match self.vcpu_fd.run() {
-            Ok(exit_reason) => match exit_reason {
-                // The VM stopped (Shutdown ot HLT).
-                VcpuExit::Shutdown | VcpuExit::Hlt => {
-                    println!("Guest shutdown: {:?}. Bye!", exit_reason);
+        loop {
+            let run = self.vcpu_fd.run();
 
-                    if no_console {
-                        *should_stop.lock().unwrap() = true;
-                    } else {
-                        let stdin = io::stdin();
-                        let stdin_lock = stdin.lock();
-                        stdin_lock.set_canon_mode().unwrap();
-
-                        unsafe { libc::exit(0) };
+            match run {
+                Ok(exit_reason) => match exit_reason {
+                    // The VM stopped (Shutdown ot HLT).
+                    VcpuExit::Shutdown | VcpuExit::Hlt => {
+                        println!("Guest shutdown: {:?}. Bye!", exit_reason);
+                        unix_socket.write_all(b"1").unwrap();
                     }
-                }
 
-                // This is a PIO write, i.e. the guest is trying to write
-                // something to an I/O port.
-                VcpuExit::IoOut(addr, data) => match addr {
-                    SERIAL_PORT_BASE..=SERIAL_PORT_LAST_REGISTER => {
-                        self.serial
-                            .lock()
-                            .unwrap()
-                            .serial
-                            .write(
+                    // This is a PIO write, i.e. the guest is trying to write
+                    // something to an I/O port.
+                    VcpuExit::IoOut(addr, data) => match addr {
+                        SERIAL_PORT_BASE..=SERIAL_PORT_LAST_REGISTER => {
+                            self.serial
+                                .lock()
+                                .unwrap()
+                                .serial
+                                .write(
+                                    (addr - SERIAL_PORT_BASE)
+                                        .try_into()
+                                        .expect("Invalid serial register offset"),
+                                    data[0],
+                                )
+                                .unwrap();
+                        }
+                        _ => {
+                            println!("Unsupported device write at {:x?}", addr);
+                        }
+                    },
+
+                    // This is a PIO read, i.e. the guest is trying to read
+                    // from an I/O port.
+                    VcpuExit::IoIn(addr, data) => match addr {
+                        SERIAL_PORT_BASE..=SERIAL_PORT_LAST_REGISTER => {
+                            data[0] = self.serial.lock().unwrap().serial.read(
                                 (addr - SERIAL_PORT_BASE)
                                     .try_into()
                                     .expect("Invalid serial register offset"),
-                                data[0],
-                            )
+                            );
+                        }
+                        _ => {
+                            println!("Unsupported device read at {:x?}", addr);
+                        }
+                    },
+
+                    // This is a MMIO write, i.e. the guest is trying to write
+                    // something to a memory-mapped I/O region.
+                    VcpuExit::MmioWrite(addr, data) => {
+                        self.virtio_manager
+                            .lock()
+                            .unwrap()
+                            .mmio_write(MmioAddress(addr), data)
                             .unwrap();
                     }
+
+                    // This is a MMIO read, i.e. the guest is trying to read
+                    // from a memory-mapped I/O region.
+                    VcpuExit::MmioRead(addr, data) => {
+                        self.virtio_manager
+                            .lock()
+                            .unwrap()
+                            .mmio_read(MmioAddress(addr), data)
+                            .unwrap();
+                    }
+
                     _ => {
-                        println!("Unsupported device write at {:x?}", addr);
+                        eprintln!("Unhandled VM-Exit: {:?}", exit_reason);
                     }
                 },
 
-                // This is a PIO read, i.e. the guest is trying to read
-                // from an I/O port.
-                VcpuExit::IoIn(addr, data) => match addr {
-                    SERIAL_PORT_BASE..=SERIAL_PORT_LAST_REGISTER => {
-                        data[0] = self.serial.lock().unwrap().serial.read(
-                            (addr - SERIAL_PORT_BASE)
-                                .try_into()
-                                .expect("Invalid serial register offset"),
-                        );
-                    }
-                    _ => {
-                        println!("Unsupported device read at {:x?}", addr);
-                    }
-                },
-
-                // This is a MMIO write, i.e. the guest is trying to write
-                // something to a memory-mapped I/O region.
-                VcpuExit::MmioWrite(addr, data) => {
-                    self.virtio_manager
-                        .lock()
-                        .unwrap()
-                        .mmio_write(MmioAddress(addr), data)
-                        .unwrap();
-                }
-
-                // This is a MMIO read, i.e. the guest is trying to read
-                // from a memory-mapped I/O region.
-                VcpuExit::MmioRead(addr, data) => {
-                    self.virtio_manager
-                        .lock()
-                        .unwrap()
-                        .mmio_read(MmioAddress(addr), data)
-                        .unwrap();
-                }
-
-                _ => {
-                    eprintln!("Unhandled VM-Exit: {:?}", exit_reason);
-                }
-            },
-
-            Err(e) => eprintln!("Emulation error: {}", e),
+                Err(e) => eprintln!("Emulation error: {}", e),
+            }
         }
     }
 }

@@ -12,7 +12,9 @@ use std::any::Any;
 use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::prelude::RawFd;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{io, path::PathBuf};
@@ -26,6 +28,7 @@ use vm_device::device_manager::IoManager;
 use vm_device::resources::Resource;
 use vm_memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 use vmm_sys_util::eventfd::EventFd;
+use vmm_sys_util::rand;
 use vmm_sys_util::terminal::Terminal;
 mod cpu;
 use cpu::{cpuid, mptable, Vcpu};
@@ -339,21 +342,20 @@ impl VMM {
 
     // Run all virtual CPUs.
     pub fn run(&mut self, no_console: bool) -> Result<()> {
+        let mut unix_socket_name = String::from("/tmp/vmm.sock");
+        while Path::new(&unix_socket_name).exists() {
+            let rng = rand::rand_alphanumerics(8);
+            unix_socket_name = format!("/tmp/vmm-{}.sock", rng.to_str().unwrap());
+        }
+
         let mut handlers: Vec<thread::JoinHandle<_>> = Vec::new();
-        let should_stop = Arc::new(Mutex::new(false));
+        let listener = UnixListener::bind(unix_socket_name.as_str()).unwrap();
+        let total_cpus = self.vcpus.len();
 
         for mut vcpu in self.vcpus.drain(..) {
-            println!("Starting vCPU {:?}", vcpu.index);
-
-            let should_stop_cloned = Arc::clone(&should_stop);
-
-            let handler = thread::Builder::new().spawn(move || loop {
-                if *should_stop_cloned.lock().unwrap() {
-                    println!("Stopping vCPU {:?}", vcpu.index);
-                    break;
-                }
-
-                vcpu.run(no_console, Arc::clone(&should_stop_cloned));
+            let socket_name = unix_socket_name.clone();
+            let handler = thread::Builder::new().spawn(move || {
+                vcpu.run(socket_name.clone());
             });
 
             match handler {
@@ -365,13 +367,15 @@ impl VMM {
             }
         }
 
-        if no_console {
-            for handler in handlers {
-                handler.join().map_err(Error::JoinThreadError)?
-            }
+        let mut connections: Vec<_> = Vec::new();
 
-            return Ok(()); // We don't want to start the console if we are in no_console mode.
+        while connections.len() < total_cpus {
+            let connection = listener.accept().unwrap().0;
+            self.epoll.add_fd(connection.as_raw_fd()).unwrap();
+            connections.push(connection);
         }
+
+        self.epoll.add_fd(listener.as_raw_fd()).unwrap();
 
         let stdin = io::stdin();
         let stdin_lock = stdin.lock();
@@ -422,6 +426,15 @@ impl VMM {
                         .unwrap()
                         .process_tap()
                         .map_err(Error::VirtioNet)?;
+                }
+
+                if connections.iter().any(|c| c.as_raw_fd() == event_data) {
+                    use vmm_sys_util::signal::Killable;
+                    println!("Shutting down");
+                    handlers.iter().for_each(|handler| {
+                        handler.kill(9).unwrap();
+                    });
+                    return Ok(());
                 }
             }
         }
