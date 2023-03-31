@@ -8,6 +8,7 @@ use std::{result, u64};
 
 use kvm_bindings::{kvm_fpu, kvm_regs, CpuId};
 use kvm_ioctls::{VcpuExit, VcpuFd, VmFd};
+use vm_device::device_manager::{IoManager, MmioManager};
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemoryError, GuestMemoryMmap};
 use vmm_sys_util::terminal::Terminal;
 
@@ -66,15 +67,22 @@ pub(crate) struct Vcpu {
     pub vcpu_fd: VcpuFd,
 
     serial: Arc<Mutex<LumperSerial>>,
+    virtio_manager: Arc<Mutex<IoManager>>,
 }
 
 impl Vcpu {
     /// Create a new vCPU.
-    pub fn new(vm_fd: &VmFd, index: u64, serial: Arc<Mutex<LumperSerial>>) -> Result<Self> {
+    pub fn new(
+        vm_fd: &VmFd,
+        index: u64,
+        serial: Arc<Mutex<LumperSerial>>,
+        virtio_manager: Arc<Mutex<IoManager>>,
+    ) -> Result<Self> {
         Ok(Vcpu {
             index,
             vcpu_fd: vm_fd.create_vcpu(index).map_err(Error::KvmIoctl)?,
             serial,
+            virtio_manager,
         })
     }
 
@@ -215,20 +223,28 @@ impl Vcpu {
     }
 
     /// vCPU emulation loop.
-    pub fn run(&mut self) {
+    pub fn run(&mut self, no_console: bool, should_stop: Arc<Mutex<bool>>) {
         // Call into KVM to launch (VMLAUNCH) or resume (VMRESUME) the virtual CPU.
         // This is a blocking function, it only returns for either an error or a
         // VM-Exit. In the latter case, we can inspect the exit reason.
-        match self.vcpu_fd.run() {
+        let run = self.vcpu_fd.run();
+
+        match run {
             Ok(exit_reason) => match exit_reason {
                 // The VM stopped (Shutdown ot HLT).
                 VcpuExit::Shutdown | VcpuExit::Hlt => {
                     println!("Guest shutdown: {:?}. Bye!", exit_reason);
-                    let stdin = io::stdin();
-                    let stdin_lock = stdin.lock();
-                    stdin_lock.set_canon_mode().unwrap();
 
-                    unsafe { libc::exit(0) };
+                    if no_console {
+                        println!("Exiting... {:?}", self.index);
+                        *should_stop.lock().unwrap() = true;
+                    } else {
+                        let stdin = io::stdin();
+                        let stdin_lock = stdin.lock();
+                        stdin_lock.set_canon_mode().unwrap();
+
+                        unsafe { libc::exit(0) };
+                    }
                 }
 
                 // This is a PIO write, i.e. the guest is trying to write
@@ -266,10 +282,32 @@ impl Vcpu {
                         println!("Unsupported device read at {:x?}", addr);
                     }
                 },
+
+                // This is a MMIO write, i.e. the guest is trying to write
+                // something to a memory-mapped I/O region.
+                VcpuExit::MmioWrite(addr, data) => {
+                    self.virtio_manager
+                        .lock()
+                        .unwrap()
+                        .mmio_write(GuestAddress(addr), data)
+                        .unwrap();
+                }
+
+                // This is a MMIO read, i.e. the guest is trying to read
+                // from a memory-mapped I/O region.
+                VcpuExit::MmioRead(addr, data) => {
+                    self.virtio_manager
+                        .lock()
+                        .unwrap()
+                        .mmio_read(GuestAddress(addr), data)
+                        .unwrap();
+                }
+
                 _ => {
                     eprintln!("Unhandled VM-Exit: {:?}", exit_reason);
                 }
             },
+
             Err(e) => eprintln!("Emulation error: {}", e),
         }
     }
