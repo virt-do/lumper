@@ -12,6 +12,7 @@ use std::any::Any;
 use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream;
 use std::os::unix::prelude::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -268,6 +269,7 @@ impl VMM {
         &mut self,
         console_path: Option<String>,
         disable_console: bool,
+        is_socket: bool,
     ) -> Result<()> {
         if disable_console {
             return Ok(());
@@ -278,11 +280,23 @@ impl VMM {
             .map_err(Error::Cmdline)?;
 
         if let Some(console_path) = console_path {
-            // We create the file if it does not exist, else we open
-            let file = File::create(&console_path).map_err(Error::ConsoleError)?;
+            if is_socket {
+                println!("Connecting to socket: {}", console_path);
+                let unix_stream = UnixStream::connect(console_path).unwrap();
 
-            let mut serial = self.serial.lock().unwrap();
-            *serial = LumperSerial::new(Box::new(file)).map_err(Error::SerialCreation)?;
+                // create writer
+
+                let writer = Writer::new(unix_stream);
+                let mut serial = self.serial.lock().unwrap();
+
+                *serial = LumperSerial::new(Box::new(writer)).map_err(Error::SerialCreation)?;
+            } else {
+                // We create the file if it does not exist, else we open
+                let file = File::create(&console_path).map_err(Error::ConsoleError)?;
+
+                let mut serial = self.serial.lock().unwrap();
+                *serial = LumperSerial::new(Box::new(file)).map_err(Error::SerialCreation)?;
+            }
         }
 
         Ok(())
@@ -429,9 +443,6 @@ impl VMM {
         }
     }
 
-        console: Option<String>,
-        no_console: bool,
-
     pub fn configure(
         &mut self,
         num_vcpus: u8,
@@ -441,8 +452,9 @@ impl VMM {
         no_console: bool,
         initramfs_path: Option<String>,
         if_name: Option<String>,
+        is_socket: bool,
     ) -> Result<()> {
-        self.configure_console(console, no_console)?;
+        self.configure_console(console, no_console, is_socket)?;
         self.configure_memory(mem_size_mb)?;
         self.load_default_cmdline()?;
 

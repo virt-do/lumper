@@ -227,9 +227,7 @@ impl Vcpu {
         // Call into KVM to launch (VMLAUNCH) or resume (VMRESUME) the virtual CPU.
         // This is a blocking function, it only returns for either an error or a
         // VM-Exit. In the latter case, we can inspect the exit reason.
-        println!("Before running vCPU {}...", self.index);
         let run = self.vcpu_fd.run();
-        println!("After running vCPU {}...", self.index);
 
         match run {
             Ok(exit_reason) => match exit_reason {

@@ -1,26 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::{Result, Write};
-use std::sync::mpsc;
+use std::os::unix::net::UnixStream;
 
 pub(crate) mod net;
 pub(crate) mod serial;
 
 pub struct Writer {
-    tx: mpsc::Sender<String>,
+    unix_stream: UnixStream,
 }
 
 impl Write for Writer {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        if buf.len() > 0 && (buf[0] != 10 && buf[0] != 13) {
-            let s = String::from_utf8_lossy(buf).to_string();
-            self.tx.send(s).map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Error while sending data to channel",
-                )
-            })?;
-        }
+        let s = String::from_utf8_lossy(buf).to_string();
+        let _ = &self.unix_stream.write(s.as_bytes()).unwrap();
+
         Ok(buf.len())
     }
 
@@ -30,7 +24,7 @@ impl Write for Writer {
 }
 
 impl Writer {
-    pub fn new(tx: mpsc::Sender<String>) -> Self {
-        Writer { tx }
+    pub fn new(unix_stream: UnixStream) -> Self {
+        Writer { unix_stream }
     }
 }
