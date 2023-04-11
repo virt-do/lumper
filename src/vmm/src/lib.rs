@@ -12,7 +12,7 @@ use std::any::Any;
 use std::fs::File;
 use std::io::stdout;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::os::unix::prelude::RawFd;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -341,7 +341,7 @@ impl VMM {
     }
 
     // Run all virtual CPUs.
-    pub fn run(&mut self, no_console: bool) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         let mut unix_socket_name = String::from("/tmp/vmm.sock");
         while Path::new(&unix_socket_name).exists() {
             let rng = rand::rand_alphanumerics(8);
@@ -430,7 +430,6 @@ impl VMM {
 
                 if connections.iter().any(|c| c.as_raw_fd() == event_data) {
                     use vmm_sys_util::signal::Killable;
-                    println!("Shutting down");
                     handlers.iter().for_each(|handler| {
                         handler.kill(9).unwrap();
                     });
