@@ -59,7 +59,7 @@ fn main() -> Result<(), Error> {
         opts.cpus,
         opts.memory,
         &opts.kernel,
-        opts.console,
+        opts.console.clone(),
         opts.initramfs,
         opts.net,
     )
